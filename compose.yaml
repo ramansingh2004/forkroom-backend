@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: forkroom
       POSTGRES_PASSWORD: forkroom
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - forkroom_postgres_data:/var/lib/postgresql/data
     healthcheck:

@@ -1,8 +1,6 @@
-"""SQLAlchemy models.
-
-Import every model in ``import_all_models`` so Alembic can discover it.
-"""
+"""SQLAlchemy model registration."""
 
 
 def import_all_models() -> None:
-    """Import model modules before Alembic reads Base.metadata."""
+    """Import every model before Alembic reads Base.metadata."""
+    from app.models.user import User  # noqa: F401
