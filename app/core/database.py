@@ -14,7 +14,11 @@ from app.core.config import get_settings
 
 class Base(AsyncAttrs, DeclarativeBase):
     pass
-
+# this files does 4 things
+# 1. Creates the base class for SQLAlchemy models
+# 2. Creates the database engine
+# 3. Creates database sessions for requests
+# 4. Closes database connections during shutdown
 
 settings = get_settings()
 engine: AsyncEngine = create_async_engine(
