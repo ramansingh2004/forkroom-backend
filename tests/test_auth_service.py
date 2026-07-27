@@ -9,18 +9,34 @@ from app.core.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveAccountError,
     InvalidCredentialsError,
+    InvalidTokenError,
 )
-from app.core.security import hash_password, verify_password
+from app.core.security import (
+    create_token_pair,
+    hash_password,
+    verify_password,
+)
 from app.models.user import User
 from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.user import UserRepository
-from app.schemas.auth import LoginRequest, RegisterRequest
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+)
 from app.services.auth import AuthService
 
-refresh_tokens = AsyncMock(spec=RefreshTokenRepository)
+
+@pytest.fixture
+def refresh_tokens() -> AsyncMock:
+    repository = AsyncMock(spec=RefreshTokenRepository)
+    repository.is_family_revoked.return_value = False
+    return repository
 
 
-async def test_register_normalizes_email_and_hashes_password() -> None:
+async def test_register_normalizes_email_and_hashes_password(
+    refresh_tokens: AsyncMock,
+) -> None:
     repository = AsyncMock(spec=UserRepository)
     repository.get_by_email.return_value = None
     repository.create.side_effect = lambda user: user
@@ -43,7 +59,9 @@ async def test_register_normalizes_email_and_hashes_password() -> None:
     assert verify_password("strong-password", user.password_hash)
 
 
-async def test_register_stops_when_email_exists() -> None:
+async def test_register_stops_when_email_exists(
+    refresh_tokens: AsyncMock,
+) -> None:
     repository = AsyncMock(spec=UserRepository)
     repository.get_by_email.return_value = User(
         email="raman@example.com",
@@ -67,7 +85,9 @@ async def test_register_stops_when_email_exists() -> None:
     repository.create.assert_not_awaited()
 
 
-async def test_login_verifies_password_and_returns_tokens() -> None:
+async def test_login_verifies_password_and_returns_tokens(
+    refresh_tokens: AsyncMock,
+) -> None:
     user = User(
         id=uuid4(),
         email="raman@example.com",
@@ -128,6 +148,7 @@ async def test_login_verifies_password_and_returns_tokens() -> None:
 async def test_login_rejects_invalid_credentials(
     repository_user: User | None,
     password: str,
+    refresh_tokens: AsyncMock,
 ) -> None:
     repository = AsyncMock(spec=UserRepository)
     repository.get_by_email.return_value = repository_user
@@ -140,7 +161,9 @@ async def test_login_rejects_invalid_credentials(
         await service.login(LoginRequest(email="raman@example.com", password=password))
 
 
-async def test_login_rejects_inactive_account() -> None:
+async def test_login_rejects_inactive_account(
+    refresh_tokens: AsyncMock,
+) -> None:
     user = User(
         email="raman@example.com",
         password_hash=hash_password("strong-password"),
@@ -161,3 +184,33 @@ async def test_login_rejects_inactive_account() -> None:
                 password="strong-password",
             )
         )
+
+
+async def test_refresh_rejects_reused_token() -> None:
+    user_id = uuid4()
+    tokens = create_token_pair(user_id)
+
+    repository = AsyncMock(spec=UserRepository)
+    refresh_tokens = AsyncMock(spec=RefreshTokenRepository)
+
+    # The token family has not already been revoked.
+    refresh_tokens.is_family_revoked.return_value = False
+
+    # False means this refresh token was already consumed.
+    refresh_tokens.consume.return_value = False
+
+    service = AuthService(
+        repository,
+        refresh_tokens,
+    )
+
+    with pytest.raises(InvalidTokenError):
+        await service.refresh(
+            RefreshRequest(
+                refresh_token=tokens.refresh_token,
+            )
+        )
+
+    refresh_tokens.consume.assert_awaited_once()
+    refresh_tokens.revoke_family.assert_awaited_once()
+    repository.get_by_id.assert_not_awaited()

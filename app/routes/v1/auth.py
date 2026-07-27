@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, status
 
 from app.controllers.auth import (
     login_user,
+    logout_user,
     refresh_tokens,
     register_user,
 )
 from app.dependencies.auth import (
+    enforce_auth_rate_limit,
     get_auth_service,
     get_current_user,
 )
@@ -15,6 +17,7 @@ from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -33,6 +36,7 @@ router = APIRouter(
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a user account",
+    dependencies=[Depends(enforce_auth_rate_limit)],
 )
 async def register(
     payload: RegisterRequest,
@@ -51,6 +55,7 @@ async def register(
     "/login",
     response_model=LoginResponse,
     summary="Authenticate a user",
+    dependencies=[Depends(enforce_auth_rate_limit)],
 )
 async def login(
     payload: LoginRequest,
@@ -68,7 +73,8 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenResponse,
-    summary="Rotate an authentication token pair",
+    summary=("Rotate an authentication token pair"),
+    dependencies=[Depends(enforce_auth_rate_limit)],
 )
 async def refresh(
     payload: RefreshRequest,
@@ -78,6 +84,25 @@ async def refresh(
     ],
 ) -> TokenResponse:
     return await refresh_tokens(
+        payload,
+        service,
+    )
+
+
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary=("Revoke the current authentication session"),
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
+async def logout(
+    payload: LogoutRequest,
+    service: Annotated[
+        AuthService,
+        Depends(get_auth_service),
+    ],
+) -> None:
+    await logout_user(
         payload,
         service,
     )

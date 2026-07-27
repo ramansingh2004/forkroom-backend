@@ -23,6 +23,7 @@ class TokenPair:
 class DecodedToken:
     user_id: UUID
     jti: UUID
+    family_id: UUID
     expires_at: datetime
 
 
@@ -40,6 +41,7 @@ def _create_token(
     *,
     subject: UUID,
     token_type: str,
+    family_id: UUID,
     secret: str,
     expires_delta: timedelta,
 ) -> str:
@@ -49,6 +51,7 @@ def _create_token(
         "sub": str(subject),
         "type": token_type,
         "jti": str(uuid4()),
+        "family": str(family_id),
         "iat": now,
         "exp": now + expires_delta,
     }
@@ -60,9 +63,13 @@ def _create_token(
     )
 
 
-def create_token_pair(user_id: UUID) -> TokenPair:
+def create_token_pair(
+    user_id: UUID,
+    family_id: UUID | None = None,
+) -> TokenPair:
     """Create independently signed access and refresh JWTs for a user."""
     settings = get_settings()
+    token_family_id = family_id or uuid4()
 
     access_lifetime = timedelta(minutes=settings.access_token_expire_minutes)
     refresh_lifetime = timedelta(days=settings.refresh_token_expire_days)
@@ -71,12 +78,14 @@ def create_token_pair(user_id: UUID) -> TokenPair:
         access_token=_create_token(
             subject=user_id,
             token_type="access",
+            family_id=token_family_id,
             secret=settings.jwt_access_secret,
             expires_delta=access_lifetime,
         ),
         refresh_token=_create_token(
             subject=user_id,
             token_type="refresh",
+            family_id=token_family_id,
             secret=settings.jwt_refresh_secret,
             expires_delta=refresh_lifetime,
         ),
@@ -100,6 +109,7 @@ def _decode_token(
                     "sub",
                     "type",
                     "jti",
+                    "family",
                     "iat",
                     "exp",
                 ]
@@ -112,6 +122,7 @@ def _decode_token(
         return DecodedToken(
             user_id=UUID(payload["sub"]),
             jti=UUID(payload["jti"]),
+            family_id=UUID(payload["family"]),
             expires_at=datetime.fromtimestamp(
                 payload["exp"],
                 tz=UTC,

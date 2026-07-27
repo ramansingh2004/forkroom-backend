@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=15, gt=0)
     refresh_token_expire_days: int = Field(default=7, gt=0)
 
+    auth_rate_limit_window_seconds: int = Field(default=60, gt=0)
+    register_rate_limit_requests: int = Field(default=3, gt=0)
+    login_rate_limit_requests: int = Field(default=5, gt=0)
+    refresh_rate_limit_requests: int = Field(default=10, gt=0)
+    logout_rate_limit_requests: int = Field(default=10, gt=0)
+
 
 @lru_cache
 def get_settings() -> Settings:

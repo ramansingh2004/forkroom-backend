@@ -9,6 +9,7 @@ from app.core.exceptions import (
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
+    LogoutRequest,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
@@ -52,8 +53,8 @@ async def login_user(
 
     return LoginResponse(
         user=UserResponse.model_validate(result.user),
-        access_token=result.tokens.access_token,
-        refresh_token=result.tokens.refresh_token,
+        access_token=(result.tokens.access_token),
+        refresh_token=(result.tokens.refresh_token),
         expires_in=(result.tokens.access_token_expires_in),
     )
 
@@ -79,5 +80,19 @@ async def refresh_tokens(
     return TokenResponse(
         access_token=tokens.access_token,
         refresh_token=tokens.refresh_token,
-        expires_in=tokens.access_token_expires_in,
+        expires_in=(tokens.access_token_expires_in),
     )
+
+
+async def logout_user(
+    payload: LogoutRequest,
+    service: AuthService,
+) -> None:
+    try:
+        await service.logout(payload)
+    except InvalidTokenError as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=("Invalid or expired refresh token"),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from error

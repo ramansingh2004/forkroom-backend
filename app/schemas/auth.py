@@ -23,7 +23,10 @@ class RegisterRequest(BaseModel):
 
     @field_validator("display_name")
     @classmethod
-    def normalize_display_name(cls, value: str) -> str:
+    def normalize_display_name(
+        cls,
+        value: str,
+    ) -> str:
         normalized = " ".join(value.split())
 
         if len(normalized) < 2:
@@ -61,6 +64,10 @@ class LoginResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1)
+
+
+class LogoutRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 
 

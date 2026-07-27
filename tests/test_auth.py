@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -9,20 +10,29 @@ from app.core.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveAccountError,
     InvalidCredentialsError,
+    InvalidTokenError,
 )
 from app.core.security import TokenPair
-from app.dependencies.auth import get_auth_service
+from app.dependencies.auth import (
+    enforce_auth_rate_limit,
+    get_auth_service,
+)
 from app.main import app
 from app.models.user import User
 from app.services.auth import LoginResult
 
 
 @pytest.fixture
-def auth_service() -> AsyncMock:
+def auth_service() -> Iterator[AsyncMock]:
     service = AsyncMock()
+
     app.dependency_overrides[get_auth_service] = lambda: service
+    app.dependency_overrides[enforce_auth_rate_limit] = lambda: None
+
     yield service
+
     app.dependency_overrides.pop(get_auth_service, None)
+    app.dependency_overrides.pop(enforce_auth_rate_limit, None)
 
 
 async def test_register_returns_created_user(
@@ -167,3 +177,32 @@ async def test_login_maps_authentication_errors(
 
     assert response.status_code == expected_status
     assert response.json() == {"detail": expected_detail}
+
+
+async def test_logout_revokes_session(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/logout",
+        json={"refresh_token": ("valid-refresh-token")},
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    auth_service.logout.assert_awaited_once()
+
+
+async def test_logout_rejects_invalid_refresh_token(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    auth_service.logout.side_effect = InvalidTokenError
+
+    response = await client.post(
+        "/api/v1/auth/logout",
+        json={"refresh_token": ("invalid-refresh-token")},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": ("Invalid or expired refresh token")}

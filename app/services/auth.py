@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from datetime import timedelta
 
+from app.core.config import get_settings
 from app.core.exceptions import (
     EmailAlreadyRegisteredError,
     InactiveAccountError,
@@ -14,10 +16,13 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.repositories.refresh_token import RefreshTokenRepository
+from app.repositories.refresh_token import (
+    RefreshTokenRepository,
+)
 from app.repositories.user import UserRepository
 from app.schemas.auth import (
     LoginRequest,
+    LogoutRequest,
     RefreshRequest,
     RegisterRequest,
 )
@@ -37,6 +42,10 @@ class AuthService:
     ) -> None:
         self._users = user_repository
         self._refresh_tokens = refresh_tokens
+
+    @staticmethod
+    def _family_revocation_ttl() -> int:
+        return int(timedelta(days=(get_settings().refresh_token_expire_days)).total_seconds())
 
     async def register(
         self,
@@ -81,20 +90,49 @@ class AuthService:
     ) -> TokenPair:
         decoded = decode_refresh_token(payload.refresh_token)
 
+        if await self._refresh_tokens.is_family_revoked(decoded.family_id):
+            raise InvalidTokenError
+
         was_consumed = await self._refresh_tokens.consume(
             decoded.jti,
             decoded.expires_at,
         )
 
         if not was_consumed:
+            await self._refresh_tokens.revoke_family(
+                decoded.family_id,
+                self._family_revocation_ttl(),
+            )
             raise InvalidTokenError
 
         user = await self._users.get_by_id(decoded.user_id)
 
         if user is None:
+            await self._refresh_tokens.revoke_family(
+                decoded.family_id,
+                self._family_revocation_ttl(),
+            )
             raise InvalidTokenError
 
         if not user.is_active:
+            await self._refresh_tokens.revoke_family(
+                decoded.family_id,
+                self._family_revocation_ttl(),
+            )
             raise InactiveAccountError
 
-        return create_token_pair(user.id)
+        return create_token_pair(
+            user.id,
+            decoded.family_id,
+        )
+
+    async def logout(
+        self,
+        payload: LogoutRequest,
+    ) -> None:
+        decoded = decode_refresh_token(payload.refresh_token)
+
+        await self._refresh_tokens.revoke_family(
+            decoded.family_id,
+            self._family_revocation_ttl(),
+        )
