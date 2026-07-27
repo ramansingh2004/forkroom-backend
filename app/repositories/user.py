@@ -17,10 +17,13 @@ class UserRepository:
         return cast(User | None, await self._session.scalar(statement))
 
     async def create(self, user: User) -> User:
-        self._session.add(user)
+        self._session.add(user)  # add() normally only puts the model into the session.
         try:
-            await self._session.commit()
+            await (
+                self._session.commit()
+            )  # The actual SQL is commonly sent when SQLAlchemy do commit
         except IntegrityError as error:
+            # After a failed commit, the SQLAlchemy session is in a failed transaction state.
             await self._session.rollback()
             raise EmailAlreadyRegisteredError from error
 

@@ -22,8 +22,14 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] = ["http://localhost:3000"]
 
-    jwt_access_secret: str = Field(default="development-access-secret", min_length=16)
-    jwt_refresh_secret: str = Field(default="development-refresh-secret", min_length=16)
+    jwt_access_secret: str = Field(
+        default="development-access-secret-change-me-32",
+        min_length=32,
+    )
+    jwt_refresh_secret: str = Field(
+        default="development-refresh-secret-change-me-32",
+        min_length=32,
+    )
     access_token_expire_minutes: int = Field(default=15, gt=0)
     refresh_token_expire_days: int = Field(default=7, gt=0)
 

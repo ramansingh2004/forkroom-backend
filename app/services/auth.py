@@ -1,8 +1,20 @@
-from app.core.exceptions import EmailAlreadyRegisteredError
-from app.core.security import hash_password
+from dataclasses import dataclass
+
+from app.core.exceptions import (
+    EmailAlreadyRegisteredError,
+    InactiveAccountError,
+    InvalidCredentialsError,
+)
+from app.core.security import TokenPair, create_token_pair, hash_password, verify_password
 from app.models.user import User
 from app.repositories.user import UserRepository
-from app.schemas.auth import RegisterRequest
+from app.schemas.auth import LoginRequest, RegisterRequest
+
+
+@dataclass(frozen=True, slots=True)
+class LoginResult:
+    user: User
+    tokens: TokenPair
 
 
 class AuthService:
@@ -20,3 +32,13 @@ class AuthService:
             display_name=payload.display_name,
         )
         return await self._users.create(user)
+
+    async def login(self, payload: LoginRequest) -> LoginResult:
+        user = await self._users.get_by_email(payload.email.lower())
+        if user is None or not verify_password(payload.password, user.password_hash):
+            raise InvalidCredentialsError
+
+        if not user.is_active:
+            raise InactiveAccountError
+
+        return LoginResult(user=user, tokens=create_token_pair(user.id))

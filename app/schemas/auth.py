@@ -18,6 +18,11 @@ class RegisterRequest(BaseModel):
         return normalized
 
 
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -28,3 +33,11 @@ class UserResponse(BaseModel):
     is_active: bool
     is_email_verified: bool
     created_at: datetime
+
+
+class LoginResponse(BaseModel):
+    user: UserResponse
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
