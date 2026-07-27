@@ -6,6 +6,7 @@ import jwt
 from pwdlib import PasswordHash
 
 from app.core.config import get_settings
+from app.core.exceptions import InvalidTokenError
 
 password_hasher = PasswordHash.recommended()
 JWT_ALGORITHM = "HS256"
@@ -16,6 +17,13 @@ class TokenPair:
     access_token: str
     refresh_token: str
     access_token_expires_in: int
+
+
+@dataclass(frozen=True, slots=True)
+class DecodedToken:
+    user_id: UUID
+    jti: UUID
+    expires_at: datetime
 
 
 def hash_password(password: str) -> str:
@@ -36,6 +44,7 @@ def _create_token(
     expires_delta: timedelta,
 ) -> str:
     now = datetime.now(UTC)
+
     payload = {
         "sub": str(subject),
         "type": token_type,
@@ -43,12 +52,18 @@ def _create_token(
         "iat": now,
         "exp": now + expires_delta,
     }
-    return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
+
+    return jwt.encode(
+        payload,
+        secret,
+        algorithm=JWT_ALGORITHM,
+    )
 
 
 def create_token_pair(user_id: UUID) -> TokenPair:
     """Create independently signed access and refresh JWTs for a user."""
     settings = get_settings()
+
     access_lifetime = timedelta(minutes=settings.access_token_expire_minutes)
     refresh_lifetime = timedelta(days=settings.refresh_token_expire_days)
 
@@ -66,4 +81,65 @@ def create_token_pair(user_id: UUID) -> TokenPair:
             expires_delta=refresh_lifetime,
         ),
         access_token_expires_in=int(access_lifetime.total_seconds()),
+    )
+
+
+def _decode_token(
+    *,
+    token: str,
+    expected_type: str,
+    secret: str,
+) -> DecodedToken:
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=[JWT_ALGORITHM],
+            options={
+                "require": [
+                    "sub",
+                    "type",
+                    "jti",
+                    "iat",
+                    "exp",
+                ]
+            },
+        )
+
+        if payload["type"] != expected_type:
+            raise jwt.InvalidTokenError
+
+        return DecodedToken(
+            user_id=UUID(payload["sub"]),
+            jti=UUID(payload["jti"]),
+            expires_at=datetime.fromtimestamp(
+                payload["exp"],
+                tz=UTC,
+            ),
+        )
+
+    except (
+        jwt.InvalidTokenError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise InvalidTokenError from error
+
+
+def decode_access_token(token: str) -> DecodedToken:
+    """Validate and decode an access token."""
+    return _decode_token(
+        token=token,
+        expected_type="access",
+        secret=get_settings().jwt_access_secret,
+    )
+
+
+def decode_refresh_token(token: str) -> DecodedToken:
+    """Validate and decode a refresh token."""
+    return _decode_token(
+        token=token,
+        expected_type="refresh",
+        secret=get_settings().jwt_refresh_secret,
     )

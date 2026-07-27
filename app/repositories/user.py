@@ -1,4 +1,5 @@
 from typing import cast
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -14,16 +15,20 @@ class UserRepository:
 
     async def get_by_email(self, email: str) -> User | None:
         statement = select(User).where(func.lower(User.email) == email.lower())
-        return cast(User | None, await self._session.scalar(statement))
+        return cast(
+            User | None,
+            await self._session.scalar(statement),
+        )
+
+    async def get_by_id(self, user_id: UUID) -> User | None:
+        return await self._session.get(User, user_id)
 
     async def create(self, user: User) -> User:
-        self._session.add(user)  # add() normally only puts the model into the session.
+        self._session.add(user)
+
         try:
-            await (
-                self._session.commit()
-            )  # The actual SQL is commonly sent when SQLAlchemy do commit
+            await self._session.commit()
         except IntegrityError as error:
-            # After a failed commit, the SQLAlchemy session is in a failed transaction state.
             await self._session.rollback()
             raise EmailAlreadyRegisteredError from error
 

@@ -8,3 +8,7 @@ class InvalidCredentialsError(Exception):
 
 class InactiveAccountError(Exception):
     """Raised when an inactive account attempts to authenticate."""
+
+
+class InvalidTokenError(Exception):
+    """Raised when an authentication token is invalid, expired, or reused."""

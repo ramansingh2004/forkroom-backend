@@ -12,16 +12,22 @@ from app.core.exceptions import (
 )
 from app.core.security import hash_password, verify_password
 from app.models.user import User
+from app.repositories.refresh_token import RefreshTokenRepository
 from app.repositories.user import UserRepository
 from app.schemas.auth import LoginRequest, RegisterRequest
 from app.services.auth import AuthService
+
+refresh_tokens = AsyncMock(spec=RefreshTokenRepository)
 
 
 async def test_register_normalizes_email_and_hashes_password() -> None:
     repository = AsyncMock(spec=UserRepository)
     repository.get_by_email.return_value = None
     repository.create.side_effect = lambda user: user
-    service = AuthService(repository)
+    service = AuthService(
+        repository,
+        refresh_tokens,
+    )
 
     user = await service.register(
         RegisterRequest(
@@ -44,7 +50,10 @@ async def test_register_stops_when_email_exists() -> None:
         password_hash="existing-hash",
         display_name="Raman Singh",
     )
-    service = AuthService(repository)
+    service = AuthService(
+        repository,
+        refresh_tokens,
+    )
 
     with pytest.raises(EmailAlreadyRegisteredError):
         await service.register(
@@ -68,7 +77,10 @@ async def test_login_verifies_password_and_returns_tokens() -> None:
     )
     repository = AsyncMock(spec=UserRepository)
     repository.get_by_email.return_value = user
-    service = AuthService(repository)
+    service = AuthService(
+        repository,
+        refresh_tokens,
+    )
 
     result = await service.login(
         LoginRequest(email="RAMAN@example.com", password="strong-password")
@@ -119,7 +131,10 @@ async def test_login_rejects_invalid_credentials(
 ) -> None:
     repository = AsyncMock(spec=UserRepository)
     repository.get_by_email.return_value = repository_user
-    service = AuthService(repository)
+    service = AuthService(
+        repository,
+        refresh_tokens,
+    )
 
     with pytest.raises(InvalidCredentialsError):
         await service.login(LoginRequest(email="raman@example.com", password=password))
@@ -134,7 +149,10 @@ async def test_login_rejects_inactive_account() -> None:
     )
     repository = AsyncMock(spec=UserRepository)
     repository.get_by_email.return_value = user
-    service = AuthService(repository)
+    service = AuthService(
+        repository,
+        refresh_tokens,
+    )
 
     with pytest.raises(InactiveAccountError):
         await service.login(
