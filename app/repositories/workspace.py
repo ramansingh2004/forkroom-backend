@@ -101,6 +101,23 @@ class WorkspaceRepository:
             for row in rows
         ]
 
+    async def list_voting_eligible_user_ids(self, workspace_id: UUID) -> list[UUID]:
+        statement = (
+            select(WorkspaceMember.user_id)
+            .where(
+                WorkspaceMember.workspace_id == workspace_id,
+                WorkspaceMember.role.in_(
+                    {
+                        WorkspaceRole.OWNER,
+                        WorkspaceRole.ADMIN,
+                        WorkspaceRole.MEMBER,
+                    }
+                ),
+            )
+            .order_by(WorkspaceMember.joined_at.asc())
+        )
+        return list((await self._session.scalars(statement)).all())
+
     async def add_member(
         self,
         workspace_id: UUID,

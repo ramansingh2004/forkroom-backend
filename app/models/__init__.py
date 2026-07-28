@@ -14,4 +14,10 @@ def import_all_models() -> None:
         ProposalScore,
     )
     from app.models.user import User  # noqa: F401
+    from app.models.voting import (  # noqa: F401
+        Vote,
+        VotingEligibleVoter,
+        VotingSession,
+        VotingSessionProposal,
+    )
     from app.models.workspace import Workspace, WorkspaceMember  # noqa: F401

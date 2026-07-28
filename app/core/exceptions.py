@@ -100,3 +100,35 @@ class ObjectionImmutableError(Exception):
 
 class ObjectionInvalidTransitionError(Exception):
     """Raised when an objection status transition is not allowed."""
+
+
+class VotingSessionNotFoundError(Exception):
+    """Raised when a voting session does not exist inside a visible decision."""
+
+
+class VotingAccessDeniedError(Exception):
+    """Raised when a role or eligibility snapshot forbids a voting action."""
+
+
+class VotingConflictError(Exception):
+    """Raised when another unfinished voting session already exists."""
+
+
+class VotingBlockedByObjectionsError(Exception):
+    """Raised when unresolved blocking objections prevent voting from opening."""
+
+
+class VotingInvalidTransitionError(Exception):
+    """Raised when a voting session status transition is not allowed."""
+
+
+class VotingClosedError(Exception):
+    """Raised when a ballot is submitted outside an open voting window."""
+
+
+class VoteAlreadyCastError(Exception):
+    """Raised when an eligible participant attempts to vote more than once."""
+
+
+class VotingResultUnavailableError(Exception):
+    """Raised when results are requested before a voting session is closed."""

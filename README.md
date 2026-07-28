@@ -69,7 +69,21 @@ Structured objections currently include:
 - owner/admin moderation, including dismissal
 - append-only transition events preserving resolution history
 - severity and status filters
-- a repository-level open-blocking check for the upcoming voting gate
+- a repository-level open-blocking check used by the voting gate
+
+Quorum-based voting currently includes:
+
+- owner/admin-created voting sessions for active decisions
+- draft, open, closed, and cancelled voting-session states
+- unresolved blocking-objection enforcement before opening
+- at least two submitted proposal choices per session
+- immutable voter and proposal eligibility snapshots at opening time
+- owner, admin, and member voter eligibility with viewer exclusion
+- one durable PostgreSQL ballot per eligible participant
+- optional timezone-aware voting deadlines
+- hidden results until the session closes
+- configurable quorum percentages with invalid below-quorum outcomes
+- proposal tallies, tie detection, and a winner only for valid non-tied results
 
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
@@ -169,7 +183,8 @@ SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 5. Workspace model, membership, and role permissions
 6. Decision model and lifecycle
 7. Proposal branches and weighted comparison criteria
-8. Structured objections and resolution tracking (this milestone)
+8. Structured objections and resolution tracking
+9. Quorum-based voting (this milestone)
 
 ## Decision lifecycle
 
@@ -227,5 +242,31 @@ event. Reopening clears the current resolution fields but does not erase the
 earlier event. This preserves why a concern changed state and prepares the next
 milestone to prevent voting from opening while blocking objections remain open.
 
-The next milestone adds quorum-based voting and uses unresolved blocking
-objections as a voting gate.
+## Quorum-based voting workflow
+
+Owners and admins create a draft voting session for an active decision and set
+a quorum percentage from 1 to 100. Only one draft or open session may exist for
+a decision at a time. Opening requires at least two submitted proposals and
+fails while any blocking objection remains open.
+
+When voting opens, ForkRoom snapshots both the submitted proposal choices and
+all eligible workspace voters. Owners, admins, and members are eligible;
+viewers are read-only. A participant can cast exactly one ballot for one
+snapshotted proposal, and the database unique constraint protects this rule
+under concurrent requests.
+
+Results stay unavailable while voting is open. After an owner or admin closes
+the session, ForkRoom computes:
+
+- required votes as `ceil(eligible voters * quorum percentage / 100)`
+- whether quorum was met
+- each proposal's vote count and percentage
+- a winner only when quorum was met and one proposal has the highest tally
+- a tie when multiple proposals share the highest tally
+
+A below-quorum result is retained for auditability but marked invalid and has
+no winner. Cancelling a draft or open session is terminal; a later revote uses
+a new voting session and preserves the earlier record.
+
+The next milestone locks an approved decision, preserves the winning proposal,
+vote outcome, dissent, and document hash, and prevents silent edits.
