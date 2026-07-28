@@ -84,3 +84,19 @@ class CriterionAccessDeniedError(Exception):
 
 class CriterionConflictError(Exception):
     """Raised when criterion or proposal-score data is inconsistent."""
+
+
+class ObjectionNotFoundError(Exception):
+    """Raised when an objection does not exist inside a visible proposal."""
+
+
+class ObjectionAccessDeniedError(Exception):
+    """Raised when a role or objection ownership forbids an operation."""
+
+
+class ObjectionImmutableError(Exception):
+    """Raised when a resolved or dismissed objection cannot be edited."""
+
+
+class ObjectionInvalidTransitionError(Exception):
+    """Raised when an objection status transition is not allowed."""

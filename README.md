@@ -60,6 +60,17 @@ Proposal comparison currently includes:
 - weighted comparison results for fully scored submitted proposals
 - viewer read access without proposal, criterion, or score mutation rights
 
+Structured objections currently include:
+
+- informational, major, and blocking concern severities
+- objections attached to submitted proposal branches
+- open, resolved, and dismissed objection states
+- objection-author resolution and reopening
+- owner/admin moderation, including dismissal
+- append-only transition events preserving resolution history
+- severity and status filters
+- a repository-level open-blocking check for the upcoming voting gate
+
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
 
@@ -157,7 +168,8 @@ SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 4. Email verification and password recovery
 5. Workspace model, membership, and role permissions
 6. Decision model and lifecycle
-7. Proposal branches and weighted comparison criteria (this milestone)
+7. Proposal branches and weighted comparison criteria
+8. Structured objections and resolution tracking (this milestone)
 
 ## Decision lifecycle
 
@@ -202,5 +214,18 @@ The comparison endpoint returns a weighted score only when a submitted proposal
 has a score for every current criterion. This prevents an incomplete proposal
 from appearing artificially stronger than a fully evaluated alternative.
 
-The next milestone adds structured objections, including informational, major,
-and blocking concerns with resolution tracking.
+## Structured objection workflow
+
+Members can raise informational, major, or blocking objections against a
+submitted proposal. Objections begin as `open`. The objection author, owner, or
+admin can mark an objection `resolved`; only owners and admins can dismiss one.
+Resolved and dismissed objections can be reopened by the objection author,
+owner, or admin.
+
+Every status transition requires a note and creates an append-only history
+event. Reopening clears the current resolution fields but does not erase the
+earlier event. This preserves why a concern changed state and prepares the next
+milestone to prevent voting from opening while blocking objections remain open.
+
+The next milestone adds quorum-based voting and uses unresolved blocking
+objections as a voting gate.
