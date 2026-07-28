@@ -26,6 +26,16 @@ Authentication currently includes:
 - global token invalidation after a password reset
 - Redis-backed per-IP authentication rate limits
 
+Workspace management currently includes:
+
+- workspace creation, listing, reading, updating, and deletion
+- automatic owner membership when a workspace is created
+- owner, admin, member, and viewer roles
+- member listing and adding users by registered email
+- owner-controlled role changes
+- owner/admin member removal with owner-protection rules
+- non-member workspace hiding to avoid leaking private workspace existence
+
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
 
@@ -121,5 +131,5 @@ SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 2. User model and first Alembic migration
 3. Registration, login, refresh rotation, and logout
 4. Email verification and password recovery
-5. Workspace model, membership, and role permissions
+5. Workspace model, membership, and role permissions (this milestone)
 6. Decision model and lifecycle

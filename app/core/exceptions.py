@@ -20,3 +20,23 @@ class EmailNotVerifiedError(Exception):
 
 class InvalidActionTokenError(Exception):
     """Raised when an email verification or password reset token is invalid."""
+
+
+class WorkspaceNotFoundError(Exception):
+    """Raised when a workspace does not exist or is not visible to the user."""
+
+
+class WorkspaceAccessDeniedError(Exception):
+    """Raised when a workspace role cannot perform an operation."""
+
+
+class WorkspaceMemberNotFoundError(Exception):
+    """Raised when a requested workspace member or user does not exist."""
+
+
+class WorkspaceMemberAlreadyExistsError(Exception):
+    """Raised when a user already belongs to a workspace."""
+
+
+class WorkspaceOwnerImmutableError(Exception):
+    """Raised when an operation would remove or demote the workspace owner."""
