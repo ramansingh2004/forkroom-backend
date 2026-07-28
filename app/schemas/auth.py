@@ -71,6 +71,26 @@ class LogoutRequest(BaseModel):
     refresh_token: str = Field(min_length=1)
 
 
+class EmailVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class ActionTokenRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(ActionTokenRequest):
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class MessageResponse(BaseModel):
+    detail: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

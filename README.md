@@ -11,11 +11,23 @@ This first milestone contains the FastAPI foundation:
 - Redis client and dependency
 - liveness and readiness health checks
 - Alembic migration wiring
-- Docker Compose services for PostgreSQL and Redis
+- Docker Compose services for PostgreSQL, Redis, and Mailpit
 - Ruff, mypy, Pytest, and HTTPX configuration
 
 The Hocuspocus collaboration service, Celery workers, RabbitMQ, and MinIO will
 be added in later milestones.
+
+Authentication currently includes:
+
+- registration with email verification
+- login with access and rotating refresh tokens
+- secure logout and refresh-token reuse detection
+- forgot-password and one-time password reset links
+- global token invalidation after a password reset
+- Redis-backed per-IP authentication rate limits
+
+Mailpit captures local verification and password-reset messages without sending
+real email. Open http://localhost:8025 after registering or requesting a reset.
 
 ## Prerequisites
 
@@ -31,7 +43,7 @@ cd forkroom-backend
 
 cp .env.example .env
 uv sync --dev
-docker compose up -d postgres redis
+docker compose up -d postgres redis mailpit
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
@@ -41,7 +53,7 @@ Windows Command Prompt:
 ```bat
 copy .env.example .env
 uv sync --dev
-docker compose up -d postgres redis
+docker compose up -d postgres redis mailpit
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
@@ -52,6 +64,7 @@ Open:
 - OpenAPI schema: http://localhost:8000/openapi.json
 - Liveness: http://localhost:8000/api/v1/health/live
 - Readiness: http://localhost:8000/api/v1/health/ready
+- Mailpit inbox: http://localhost:8025
 
 ## Quality checks
 
@@ -95,17 +108,18 @@ and SQLAlchemy queries in repositories.
 ```bash
 docker compose up -d
 docker compose ps
-docker compose logs -f postgres redis
+docker compose logs -f postgres redis mailpit
 docker compose down
 ```
 
-PostgreSQL is exposed on `localhost:5432` and Redis on `localhost:6379`.
+PostgreSQL is exposed on `localhost:5434`, Redis on `localhost:6379`, Mailpit
+SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 
 ## First development sequence
 
 1. Foundation and health checks (this milestone)
 2. User model and first Alembic migration
 3. Registration, login, refresh rotation, and logout
-4. Workspace model, membership, and role permissions
-5. Decision model and lifecycle
-
+4. Email verification and password recovery
+5. Workspace model, membership, and role permissions
+6. Decision model and lifecycle

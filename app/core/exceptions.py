@@ -12,3 +12,11 @@ class InactiveAccountError(Exception):
 
 class InvalidTokenError(Exception):
     """Raised when an authentication token is invalid, expired, or reused."""
+
+
+class EmailNotVerifiedError(Exception):
+    """Raised when an account must verify its email before authentication."""
+
+
+class InvalidActionTokenError(Exception):
+    """Raised when an email verification or password reset token is invalid."""

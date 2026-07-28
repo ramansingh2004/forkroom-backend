@@ -2,16 +2,23 @@ from fastapi import HTTPException, status
 
 from app.core.exceptions import (
     EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
     InactiveAccountError,
+    InvalidActionTokenError,
     InvalidCredentialsError,
     InvalidTokenError,
 )
 from app.schemas.auth import (
+    ActionTokenRequest,
+    EmailVerificationRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     LoginResponse,
     LogoutRequest,
+    MessageResponse,
     RefreshRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserResponse,
 )
@@ -49,6 +56,11 @@ async def login_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account is inactive",
+        ) from error
+    except EmailNotVerifiedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verify your email before logging in",
         ) from error
 
     return LoginResponse(
@@ -96,3 +108,63 @@ async def logout_user(
             detail=("Invalid or expired refresh token"),
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
+
+
+async def request_email_verification(
+    payload: EmailVerificationRequest,
+    service: AuthService,
+) -> MessageResponse:
+    await service.request_email_verification(payload)
+    return MessageResponse(
+        detail="If the account can be verified, a verification email has been sent"
+    )
+
+
+async def verify_email(
+    payload: ActionTokenRequest,
+    service: AuthService,
+) -> MessageResponse:
+    try:
+        await service.verify_email(payload)
+    except InvalidActionTokenError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired email verification token",
+        ) from error
+    except InactiveAccountError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is inactive",
+        ) from error
+
+    return MessageResponse(detail="Email verified successfully")
+
+
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    service: AuthService,
+) -> MessageResponse:
+    await service.forgot_password(payload)
+    return MessageResponse(
+        detail="If an active account exists, a password reset email has been sent"
+    )
+
+
+async def reset_password(
+    payload: ResetPasswordRequest,
+    service: AuthService,
+) -> MessageResponse:
+    try:
+        await service.reset_password(payload)
+    except InvalidActionTokenError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token",
+        ) from error
+    except InactiveAccountError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is inactive",
+        ) from error
+
+    return MessageResponse(detail="Password reset successfully; sign in again on all devices")

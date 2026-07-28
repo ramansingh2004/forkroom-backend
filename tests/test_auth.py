@@ -8,7 +8,9 @@ from httpx import AsyncClient
 
 from app.core.exceptions import (
     EmailAlreadyRegisteredError,
+    EmailNotVerifiedError,
     InactiveAccountError,
+    InvalidActionTokenError,
     InvalidCredentialsError,
     InvalidTokenError,
 )
@@ -159,6 +161,7 @@ async def test_login_returns_user_and_tokens(
     [
         (InvalidCredentialsError(), 401, "Invalid email or password"),
         (InactiveAccountError(), 403, "This account is inactive"),
+        (EmailNotVerifiedError(), 403, "Verify your email before logging in"),
     ],
 )
 async def test_login_maps_authentication_errors(
@@ -206,3 +209,83 @@ async def test_logout_rejects_invalid_refresh_token(
 
     assert response.status_code == 401
     assert response.json() == {"detail": ("Invalid or expired refresh token")}
+
+
+async def test_request_email_verification_uses_generic_response(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/email-verification/request",
+        json={"email": "raman@example.com"},
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "detail": "If the account can be verified, a verification email has been sent"
+    }
+    auth_service.request_email_verification.assert_awaited_once()
+
+
+async def test_confirm_email_verification(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/email-verification/confirm",
+        json={"token": "x" * 32},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"detail": "Email verified successfully"}
+    auth_service.verify_email.assert_awaited_once()
+
+
+async def test_confirm_email_verification_rejects_invalid_token(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    auth_service.verify_email.side_effect = InvalidActionTokenError
+
+    response = await client.post(
+        "/api/v1/auth/email-verification/confirm",
+        json={"token": "x" * 32},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid or expired email verification token"}
+
+
+async def test_forgot_password_uses_generic_response(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": "raman@example.com"},
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "detail": "If an active account exists, a password reset email has been sent"
+    }
+    auth_service.forgot_password.assert_awaited_once()
+
+
+async def test_reset_password(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    response = await client.post(
+        "/api/v1/auth/reset-password",
+        json={
+            "token": "x" * 32,
+            "new_password": "new-strong-password",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "detail": "Password reset successfully; sign in again on all devices"
+    }
+    auth_service.reset_password.assert_awaited_once()

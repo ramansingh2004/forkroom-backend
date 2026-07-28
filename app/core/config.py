@@ -33,11 +33,25 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=15, gt=0)
     refresh_token_expire_days: int = Field(default=7, gt=0)
 
+    frontend_url: str = "http://localhost:3000"
+    mail_from_address: str = "noreply@forkroom.local"
+    mail_from_name: str = "ForkRoom"
+    smtp_host: str = "localhost"
+    smtp_port: int = Field(default=1025, gt=0, le=65535)
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = False
+    email_verification_expire_minutes: int = Field(default=60, gt=0)
+    password_reset_expire_minutes: int = Field(default=15, gt=0)
+
     auth_rate_limit_window_seconds: int = Field(default=60, gt=0)
     register_rate_limit_requests: int = Field(default=3, gt=0)
     login_rate_limit_requests: int = Field(default=5, gt=0)
     refresh_rate_limit_requests: int = Field(default=10, gt=0)
     logout_rate_limit_requests: int = Field(default=10, gt=0)
+    verification_rate_limit_requests: int = Field(default=3, gt=0)
+    forgot_password_rate_limit_requests: int = Field(default=3, gt=0)
+    reset_password_rate_limit_requests: int = Field(default=5, gt=0)
 
 
 @lru_cache

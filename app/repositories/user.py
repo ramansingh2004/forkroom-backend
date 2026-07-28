@@ -34,3 +34,16 @@ class UserRepository:
 
         await self._session.refresh(user)
         return user
+
+    async def mark_email_verified(self, user: User) -> User:
+        user.is_email_verified = True
+        await self._session.commit()
+        await self._session.refresh(user)
+        return user
+
+    async def update_password(self, user: User, password_hash: str) -> User:
+        user.password_hash = password_hash
+        user.auth_version = (user.auth_version or 0) + 1
+        await self._session.commit()
+        await self._session.refresh(user)
+        return user

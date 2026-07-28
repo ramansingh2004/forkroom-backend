@@ -18,7 +18,9 @@ from app.core.database import get_db_session
 from app.core.exceptions import InvalidTokenError
 from app.core.redis import get_redis
 from app.core.security import decode_access_token
+from app.integrations.email import EmailService
 from app.models.user import User
+from app.repositories.action_token import ActionTokenRepository
 from app.repositories.rate_limit import (
     RateLimitRepository,
 )
@@ -44,6 +46,8 @@ def get_auth_service(
     return AuthService(
         UserRepository(session),
         RefreshTokenRepository(redis),
+        ActionTokenRepository(redis),
+        EmailService(get_settings()),
     )
 
 
@@ -65,6 +69,10 @@ async def enforce_auth_rate_limit(
         "login": (settings.login_rate_limit_requests),
         "refresh": (settings.refresh_rate_limit_requests),
         "logout": (settings.logout_rate_limit_requests),
+        "request": (settings.verification_rate_limit_requests),
+        "confirm": (settings.verification_rate_limit_requests),
+        "forgot-password": (settings.forgot_password_rate_limit_requests),
+        "reset-password": (settings.reset_password_rate_limit_requests),
     }
 
     limit = limits.get(action)
@@ -131,5 +139,8 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This account is inactive",
         )
+
+    if decoded.token_version != (user.auth_version or 0):
+        raise unauthorized
 
     return user

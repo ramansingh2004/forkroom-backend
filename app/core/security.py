@@ -24,6 +24,7 @@ class DecodedToken:
     user_id: UUID
     jti: UUID
     family_id: UUID
+    token_version: int
     expires_at: datetime
 
 
@@ -42,6 +43,7 @@ def _create_token(
     subject: UUID,
     token_type: str,
     family_id: UUID,
+    token_version: int,
     secret: str,
     expires_delta: timedelta,
 ) -> str:
@@ -52,6 +54,7 @@ def _create_token(
         "type": token_type,
         "jti": str(uuid4()),
         "family": str(family_id),
+        "ver": token_version,
         "iat": now,
         "exp": now + expires_delta,
     }
@@ -66,6 +69,7 @@ def _create_token(
 def create_token_pair(
     user_id: UUID,
     family_id: UUID | None = None,
+    token_version: int = 0,
 ) -> TokenPair:
     """Create independently signed access and refresh JWTs for a user."""
     settings = get_settings()
@@ -79,6 +83,7 @@ def create_token_pair(
             subject=user_id,
             token_type="access",
             family_id=token_family_id,
+            token_version=token_version,
             secret=settings.jwt_access_secret,
             expires_delta=access_lifetime,
         ),
@@ -86,6 +91,7 @@ def create_token_pair(
             subject=user_id,
             token_type="refresh",
             family_id=token_family_id,
+            token_version=token_version,
             secret=settings.jwt_refresh_secret,
             expires_delta=refresh_lifetime,
         ),
@@ -110,6 +116,7 @@ def _decode_token(
                     "type",
                     "jti",
                     "family",
+                    "ver",
                     "iat",
                     "exp",
                 ]
@@ -123,6 +130,7 @@ def _decode_token(
             user_id=UUID(payload["sub"]),
             jti=UUID(payload["jti"]),
             family_id=UUID(payload["family"]),
+            token_version=int(payload["ver"]),
             expires_at=datetime.fromtimestamp(
                 payload["exp"],
                 tz=UTC,
