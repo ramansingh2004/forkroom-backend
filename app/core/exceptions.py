@@ -40,3 +40,19 @@ class WorkspaceMemberAlreadyExistsError(Exception):
 
 class WorkspaceOwnerImmutableError(Exception):
     """Raised when an operation would remove or demote the workspace owner."""
+
+
+class DecisionNotFoundError(Exception):
+    """Raised when a decision does not exist in a visible workspace."""
+
+
+class DecisionAccessDeniedError(Exception):
+    """Raised when a workspace role cannot perform a decision operation."""
+
+
+class DecisionInvalidTransitionError(Exception):
+    """Raised when a decision status transition is not allowed."""
+
+
+class DecisionImmutableError(Exception):
+    """Raised when a closed or archived decision cannot be changed."""
