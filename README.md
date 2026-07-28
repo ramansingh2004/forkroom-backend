@@ -36,6 +36,30 @@ Workspace management currently includes:
 - owner/admin member removal with owner-protection rules
 - non-member workspace hiding to avoid leaking private workspace existence
 
+Decision management currently includes:
+
+- workspace-scoped decision creation, listing, reading, updating, and deletion
+- technology, architecture, delivery, team-process, and other categories
+- draft, active, closed, and archived lifecycle states
+- guarded lifecycle transitions and automatic close/archive timestamps
+- status/category filters with bounded pagination
+- viewer read-only access and member/editor write permissions
+- owner/admin-only deletion of draft decisions
+- immutable closed and archived decision content
+- optional due and review dates with schedule validation
+
+Proposal comparison currently includes:
+
+- parallel proposal branches under each decision
+- draft, submitted, and withdrawn proposal states
+- author-owned proposal editing with owner/admin moderation
+- immutable submitted proposals until explicitly reopened
+- ordered comparison criteria with weights from 1 to 100
+- owner/admin criterion creation, editing, ordering, and deletion
+- 1-to-5 proposal scoring with an optional rationale
+- weighted comparison results for fully scored submitted proposals
+- viewer read access without proposal, criterion, or score mutation rights
+
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
 
@@ -131,5 +155,52 @@ SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 2. User model and first Alembic migration
 3. Registration, login, refresh rotation, and logout
 4. Email verification and password recovery
-5. Workspace model, membership, and role permissions (this milestone)
+5. Workspace model, membership, and role permissions
 6. Decision model and lifecycle
+7. Proposal branches and weighted comparison criteria (this milestone)
+
+## Decision lifecycle
+
+New decisions always start as `draft`.
+
+```text
+draft -> active -> closed
+  |         |         |
+  +---------+---------+-> archived
+              ^
+              |
+           reopened
+```
+
+Allowed transitions:
+
+- `draft` to `active` or `archived`
+- `active` to `closed` or `archived`
+- `closed` to `active` or `archived`
+- `archived` is terminal
+
+Closed and archived decisions cannot be edited. Only draft decisions can be
+deleted, and deletion requires an owner or admin role.
+
+## Proposal comparison workflow
+
+Each proposal begins as a `draft`. Its author, an owner, or an admin can submit,
+reopen, withdraw, or delete it according to the following lifecycle:
+
+```text
+draft <-> submitted
+  |          |
+  +----------+-> withdrawn
+```
+
+Submitted proposals cannot be edited until they are reopened as drafts, and
+withdrawn proposals are terminal. Owners and admins define ordered comparison
+criteria and assign each criterion a weight from 1 to 100. Members can score a
+submitted proposal from 1 to 5 and include a rationale.
+
+The comparison endpoint returns a weighted score only when a submitted proposal
+has a score for every current criterion. This prevents an incomplete proposal
+from appearing artificially stronger than a fully evaluated alternative.
+
+The next milestone adds structured objections, including informational, major,
+and blocking concerns with resolution tracking.

@@ -56,3 +56,31 @@ class DecisionInvalidTransitionError(Exception):
 
 class DecisionImmutableError(Exception):
     """Raised when a closed or archived decision cannot be changed."""
+
+
+class ProposalNotFoundError(Exception):
+    """Raised when a proposal does not exist inside a visible decision."""
+
+
+class ProposalAccessDeniedError(Exception):
+    """Raised when a workspace role or proposal ownership forbids an operation."""
+
+
+class ProposalImmutableError(Exception):
+    """Raised when a proposal or its parent decision cannot be changed."""
+
+
+class ProposalInvalidTransitionError(Exception):
+    """Raised when a proposal status transition is not allowed."""
+
+
+class CriterionNotFoundError(Exception):
+    """Raised when a comparison criterion does not exist."""
+
+
+class CriterionAccessDeniedError(Exception):
+    """Raised when a role cannot manage comparison criteria."""
+
+
+class CriterionConflictError(Exception):
+    """Raised when criterion or proposal-score data is inconsistent."""
