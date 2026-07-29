@@ -8,6 +8,7 @@ def import_all_models() -> None:
     """Import model modules before Alembic reads Base.metadata."""
     from app.models.action_review import (  # noqa: F401
         DecisionReview,
+        DecisionRevision,
         ImplementationAction,
     )
     from app.models.decision import Decision, DecisionLock  # noqa: F401

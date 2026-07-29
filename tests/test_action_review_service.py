@@ -9,16 +9,20 @@ from app.core.exceptions import (
     ActionAssigneeInvalidError,
     ActionInvalidTransitionError,
     DecisionImmutableError,
+    DecisionRevisionNotFoundError,
     ReviewAccessDeniedError,
     ReviewInvalidScheduleError,
+    ReviewNotDueError,
+    ReviewOutcomeInvalidError,
 )
 from app.models.action_review import (
     ActionStatus,
     DecisionReview,
     ImplementationAction,
+    ReviewOutcome,
     ReviewStatus,
 )
-from app.models.decision import Decision, DecisionStatus
+from app.models.decision import Decision, DecisionLock, DecisionStatus
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from app.repositories.action_review import ActionReviewRepository
@@ -28,6 +32,7 @@ from app.schemas.action_review import (
     ActionCreateRequest,
     ActionTransitionRequest,
     ReviewCreateRequest,
+    ReviewOutcomeRequest,
 )
 from app.services.action_review import ActionReviewService
 
@@ -357,6 +362,230 @@ async def test_admin_schedules_future_review(
 
     assert review.scheduled_for == scheduled_for
     assert review.scheduled_by_id == user.id
+
+
+def make_due_review(user: User, decision: Decision) -> DecisionReview:
+    return DecisionReview(
+        id=uuid4(),
+        decision_id=decision.id,
+        scheduled_by_id=user.id,
+        scheduled_for=datetime.now(UTC) - timedelta(minutes=1),
+        status=ReviewStatus.SCHEDULED,
+    )
+
+
+async def test_confirm_review_preserves_locked_decision(
+    service: ActionReviewService,
+    record_repository: AsyncMock,
+    decision_repository: AsyncMock,
+    workspace_repository: AsyncMock,
+) -> None:
+    user, workspace, membership, decision = make_context()
+    review = make_due_review(user, decision)
+    grant_context(
+        workspace_repository,
+        decision_repository,
+        workspace,
+        membership,
+        decision,
+    )
+    record_repository.get_review.return_value = review
+    record_repository.complete_review.return_value = review
+
+    result = await service.complete_review(
+        user,
+        workspace.id,
+        decision.id,
+        review.id,
+        ReviewOutcomeRequest(
+            outcome=ReviewOutcome.CONFIRMED,
+            rationale="The original assumptions remain valid.",
+        ),
+    )
+
+    assert result.revision is None
+    assert result.successor_decision is None
+    assert decision.status is DecisionStatus.LOCKED
+    assert record_repository.complete_review.await_args.kwargs["outcome"] is ReviewOutcome.CONFIRMED
+
+
+async def test_reopen_review_creates_linked_draft_revision(
+    service: ActionReviewService,
+    record_repository: AsyncMock,
+    decision_repository: AsyncMock,
+    workspace_repository: AsyncMock,
+) -> None:
+    user, workspace, membership, decision = make_context()
+    review = make_due_review(user, decision)
+    decision_lock = DecisionLock(
+        id=uuid4(),
+        decision_id=decision.id,
+        voting_session_id=uuid4(),
+        winning_proposal_id=uuid4(),
+        locked_by_id=user.id,
+        snapshot={},
+        document_hash="a" * 64,
+    )
+    grant_context(
+        workspace_repository,
+        decision_repository,
+        workspace,
+        membership,
+        decision,
+    )
+    record_repository.get_review.return_value = review
+    record_repository.get_decision_lock.return_value = decision_lock
+    record_repository.get_revision_root.return_value = decision.id
+    record_repository.next_revision_number.return_value = 1
+    record_repository.complete_review_with_revision.side_effect = (
+        lambda review, successor, revision, **kwargs: (review, revision, successor)
+    )
+
+    result = await service.complete_review(
+        user,
+        workspace.id,
+        decision.id,
+        review.id,
+        ReviewOutcomeRequest(
+            outcome=ReviewOutcome.REOPENED,
+            rationale="New traffic data invalidates the original assumptions.",
+        ),
+    )
+
+    assert result.revision is not None
+    assert result.successor_decision is not None
+    assert result.revision.root_decision_id == decision.id
+    assert result.revision.predecessor_decision_id == decision.id
+    assert result.revision.successor_decision_id == result.successor_decision.id
+    assert result.revision.source_lock_id == decision_lock.id
+    assert result.revision.revision_number == 1
+    assert result.successor_decision.status is DecisionStatus.DRAFT
+    assert result.successor_decision.title == decision.title
+    assert decision.status is DecisionStatus.LOCKED
+
+
+async def test_supersede_review_requires_source_lock(
+    service: ActionReviewService,
+    record_repository: AsyncMock,
+    decision_repository: AsyncMock,
+    workspace_repository: AsyncMock,
+) -> None:
+    user, workspace, membership, decision = make_context()
+    review = make_due_review(user, decision)
+    grant_context(
+        workspace_repository,
+        decision_repository,
+        workspace,
+        membership,
+        decision,
+    )
+    record_repository.get_review.return_value = review
+    record_repository.get_decision_lock.return_value = None
+
+    with pytest.raises(ReviewOutcomeInvalidError):
+        await service.complete_review(
+            user,
+            workspace.id,
+            decision.id,
+            review.id,
+            ReviewOutcomeRequest(
+                outcome=ReviewOutcome.SUPERSEDED,
+                rationale="A different decision is now required.",
+                successor_title="Adopt a managed event platform",
+            ),
+        )
+
+
+async def test_review_cannot_complete_before_due_time(
+    service: ActionReviewService,
+    record_repository: AsyncMock,
+    decision_repository: AsyncMock,
+    workspace_repository: AsyncMock,
+) -> None:
+    user, workspace, membership, decision = make_context()
+    review = DecisionReview(
+        id=uuid4(),
+        decision_id=decision.id,
+        scheduled_by_id=user.id,
+        scheduled_for=datetime.now(UTC) + timedelta(days=1),
+        status=ReviewStatus.SCHEDULED,
+    )
+    grant_context(
+        workspace_repository,
+        decision_repository,
+        workspace,
+        membership,
+        decision,
+    )
+    record_repository.get_review.return_value = review
+
+    with pytest.raises(ReviewNotDueError):
+        await service.complete_review(
+            user,
+            workspace.id,
+            decision.id,
+            review.id,
+            ReviewOutcomeRequest(
+                outcome=ReviewOutcome.CONFIRMED,
+                rationale="Trying to complete this review early.",
+            ),
+        )
+
+
+async def test_member_cannot_complete_review(
+    service: ActionReviewService,
+    record_repository: AsyncMock,
+    decision_repository: AsyncMock,
+    workspace_repository: AsyncMock,
+) -> None:
+    user, workspace, membership, decision = make_context(role=WorkspaceRole.MEMBER)
+    grant_context(
+        workspace_repository,
+        decision_repository,
+        workspace,
+        membership,
+        decision,
+    )
+
+    with pytest.raises(ReviewAccessDeniedError):
+        await service.complete_review(
+            user,
+            workspace.id,
+            decision.id,
+            uuid4(),
+            ReviewOutcomeRequest(
+                outcome=ReviewOutcome.CONFIRMED,
+                rationale="The decision remains appropriate.",
+            ),
+        )
+
+    record_repository.get_review.assert_not_awaited()
+
+
+async def test_missing_revision_is_hidden_as_not_found(
+    service: ActionReviewService,
+    record_repository: AsyncMock,
+    decision_repository: AsyncMock,
+    workspace_repository: AsyncMock,
+) -> None:
+    user, workspace, membership, decision = make_context()
+    grant_context(
+        workspace_repository,
+        decision_repository,
+        workspace,
+        membership,
+        decision,
+    )
+    record_repository.get_revision_root.return_value = decision.id
+    record_repository.get_revision.return_value = None
+
+    with pytest.raises(DecisionRevisionNotFoundError):
+        await service.get_revision(
+            user,
+            workspace.id,
+            decision.id,
+            uuid4(),
+        )
 
 
 async def test_member_cannot_schedule_review(

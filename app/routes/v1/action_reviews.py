@@ -5,12 +5,15 @@ from fastapi import APIRouter, Depends, Query, status
 
 from app.controllers.action_review import (
     cancel_review,
+    complete_review,
     create_action,
     create_review,
     get_action,
     get_review,
+    get_revision,
     list_actions,
     list_reviews,
+    list_revisions,
     transition_action,
     update_action,
     update_review,
@@ -24,7 +27,10 @@ from app.schemas.action_review import (
     ActionResponse,
     ActionTransitionRequest,
     ActionUpdateRequest,
+    DecisionRevisionResponse,
     ReviewCreateRequest,
+    ReviewOutcomeRequest,
+    ReviewOutcomeResponse,
     ReviewResponse,
     ReviewUpdateRequest,
 )
@@ -210,3 +216,69 @@ async def cancel_review_route(
     service: Service,
 ) -> ReviewResponse:
     return await cancel_review(workspace_id, decision_id, review_id, current_user, service)
+
+
+@router.post(
+    "/reviews/{review_id}/outcome",
+    response_model=ReviewOutcomeResponse,
+    tags=["Decision Reviews"],
+    summary="Complete a review and record its outcome",
+)
+async def complete_review_route(
+    workspace_id: UUID,
+    decision_id: UUID,
+    review_id: UUID,
+    payload: ReviewOutcomeRequest,
+    current_user: CurrentUser,
+    service: Service,
+) -> ReviewOutcomeResponse:
+    return await complete_review(
+        workspace_id,
+        decision_id,
+        review_id,
+        payload,
+        current_user,
+        service,
+    )
+
+
+@router.get(
+    "/revisions",
+    response_model=list[DecisionRevisionResponse],
+    tags=["Decision Revisions"],
+    summary="List immutable decision revision links",
+)
+async def list_revisions_route(
+    workspace_id: UUID,
+    decision_id: UUID,
+    current_user: CurrentUser,
+    service: Service,
+) -> list[DecisionRevisionResponse]:
+    return await list_revisions(
+        workspace_id,
+        decision_id,
+        current_user,
+        service,
+    )
+
+
+@router.get(
+    "/revisions/{revision_id}",
+    response_model=DecisionRevisionResponse,
+    tags=["Decision Revisions"],
+    summary="Get an immutable decision revision link",
+)
+async def get_revision_route(
+    workspace_id: UUID,
+    decision_id: UUID,
+    revision_id: UUID,
+    current_user: CurrentUser,
+    service: Service,
+) -> DecisionRevisionResponse:
+    return await get_revision(
+        workspace_id,
+        decision_id,
+        revision_id,
+        current_user,
+        service,
+    )

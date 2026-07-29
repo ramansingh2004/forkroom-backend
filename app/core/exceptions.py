@@ -180,3 +180,15 @@ class ReviewConflictError(Exception):
 
 class ReviewInvalidScheduleError(Exception):
     """Raised when a review date or review state is invalid."""
+
+
+class ReviewNotDueError(Exception):
+    """Raised when an outcome is submitted before the scheduled review time."""
+
+
+class ReviewOutcomeInvalidError(Exception):
+    """Raised when a review outcome cannot be applied."""
+
+
+class DecisionRevisionNotFoundError(Exception):
+    """Raised when a decision revision does not exist in the requested history."""

@@ -9,10 +9,13 @@ from app.core.exceptions import (
     ActionNotFoundError,
     DecisionImmutableError,
     DecisionNotFoundError,
+    DecisionRevisionNotFoundError,
     ReviewAccessDeniedError,
     ReviewConflictError,
     ReviewInvalidScheduleError,
+    ReviewNotDueError,
     ReviewNotFoundError,
+    ReviewOutcomeInvalidError,
     WorkspaceNotFoundError,
 )
 from app.models.action_review import ActionStatus
@@ -22,10 +25,14 @@ from app.schemas.action_review import (
     ActionResponse,
     ActionTransitionRequest,
     ActionUpdateRequest,
+    DecisionRevisionResponse,
     ReviewCreateRequest,
+    ReviewOutcomeRequest,
+    ReviewOutcomeResponse,
     ReviewResponse,
     ReviewUpdateRequest,
 )
+from app.schemas.decision import DecisionResponse
 from app.services.action_review import ActionReviewService
 
 
@@ -38,6 +45,8 @@ def _raise_action_review_error(error: Exception) -> None:
         raise HTTPException(status_code=404, detail="Implementation action not found") from error
     if isinstance(error, ReviewNotFoundError):
         raise HTTPException(status_code=404, detail="Decision review not found") from error
+    if isinstance(error, DecisionRevisionNotFoundError):
+        raise HTTPException(status_code=404, detail="Decision revision not found") from error
     if isinstance(error, (ActionAccessDeniedError, ReviewAccessDeniedError)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -67,6 +76,16 @@ def _raise_action_review_error(error: Exception) -> None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The decision review schedule or state is invalid",
+        ) from error
+    if isinstance(error, ReviewNotDueError):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The decision review is not due yet",
+        ) from error
+    if isinstance(error, ReviewOutcomeInvalidError):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The decision review outcome cannot be applied",
         ) from error
     raise error
 
@@ -235,3 +254,75 @@ async def cancel_review(
         _raise_action_review_error(error)
         raise
     return ReviewResponse.model_validate(review)
+
+
+async def complete_review(
+    workspace_id: UUID,
+    decision_id: UUID,
+    review_id: UUID,
+    payload: ReviewOutcomeRequest,
+    current_user: User,
+    service: ActionReviewService,
+) -> ReviewOutcomeResponse:
+    try:
+        result = await service.complete_review(
+            current_user,
+            workspace_id,
+            decision_id,
+            review_id,
+            payload,
+        )
+    except Exception as error:
+        _raise_action_review_error(error)
+        raise
+    return ReviewOutcomeResponse(
+        review=ReviewResponse.model_validate(result.review),
+        revision=(
+            DecisionRevisionResponse.model_validate(result.revision)
+            if result.revision is not None
+            else None
+        ),
+        successor_decision=(
+            DecisionResponse.model_validate(result.successor_decision)
+            if result.successor_decision is not None
+            else None
+        ),
+    )
+
+
+async def list_revisions(
+    workspace_id: UUID,
+    decision_id: UUID,
+    current_user: User,
+    service: ActionReviewService,
+) -> list[DecisionRevisionResponse]:
+    try:
+        revisions = await service.list_revisions(
+            current_user,
+            workspace_id,
+            decision_id,
+        )
+    except Exception as error:
+        _raise_action_review_error(error)
+        raise
+    return [DecisionRevisionResponse.model_validate(revision) for revision in revisions]
+
+
+async def get_revision(
+    workspace_id: UUID,
+    decision_id: UUID,
+    revision_id: UUID,
+    current_user: User,
+    service: ActionReviewService,
+) -> DecisionRevisionResponse:
+    try:
+        revision = await service.get_revision(
+            current_user,
+            workspace_id,
+            decision_id,
+            revision_id,
+        )
+    except Exception as error:
+        _raise_action_review_error(error)
+        raise
+    return DecisionRevisionResponse.model_validate(revision)

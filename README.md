@@ -351,6 +351,27 @@ cancelled records remain available as history. The scheduled date and notes can
 be updated until the review is cancelled.
 
 Review reminders will be dispatched through Celery Beat in the later async
-platform milestone. The next lifecycle milestone will record review outcomes:
-reconfirming the lock, reopening through an explicit revision, or superseding
-the decision without modifying its immutable snapshot.
+platform milestone.
+
+When the scheduled time arrives, an owner or admin completes the review with
+one of three outcomes:
+
+- `confirmed` keeps the existing locked decision and records why it remains valid
+- `reopened` creates a new draft revision copied from the locked predecessor
+- `superseded` creates a replacement draft with explicitly supplied metadata
+
+The original decision and lock are never edited. Reopened and superseded
+reviews atomically create a new decision plus an immutable revision link that
+stores the root decision, predecessor, successor, source lock, review,
+revision number, author, outcome, and rationale. Unique constraints prevent
+duplicate successors, duplicate revision numbers, and multiple revisions from
+the same predecessor or review.
+
+Revision history is available from both the original decision and any
+successor in its chain:
+
+```text
+POST /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/reviews/{review_id}/outcome
+GET  /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/revisions
+GET  /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/revisions/{revision_id}
+```

@@ -1,5 +1,6 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.exceptions import (
     ActionAccessDeniedError,
@@ -8,15 +9,20 @@ from app.core.exceptions import (
     ActionNotFoundError,
     DecisionImmutableError,
     DecisionNotFoundError,
+    DecisionRevisionNotFoundError,
     ReviewAccessDeniedError,
     ReviewInvalidScheduleError,
+    ReviewNotDueError,
     ReviewNotFoundError,
+    ReviewOutcomeInvalidError,
     WorkspaceNotFoundError,
 )
 from app.models.action_review import (
     ActionStatus,
     DecisionReview,
+    DecisionRevision,
     ImplementationAction,
+    ReviewOutcome,
     ReviewStatus,
 )
 from app.models.decision import Decision, DecisionStatus
@@ -35,6 +41,7 @@ from app.schemas.action_review import (
     ActionTransitionRequest,
     ActionUpdateRequest,
     ReviewCreateRequest,
+    ReviewOutcomeRequest,
     ReviewUpdateRequest,
 )
 
@@ -60,6 +67,13 @@ ACTION_TRANSITIONS: dict[ActionStatus, set[ActionStatus]] = {
     ActionStatus.COMPLETED: set(),
     ActionStatus.CANCELLED: set(),
 }
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewOutcomeResult:
+    review: DecisionReview
+    revision: DecisionRevision | None
+    successor_decision: Decision | None
 
 
 class ActionReviewService:
@@ -285,6 +299,113 @@ class ActionReviewService:
             cancelled_by_id=current_user.id,
             cancelled_at=datetime.now(UTC),
         )
+
+    async def complete_review(
+        self,
+        current_user: User,
+        workspace_id: UUID,
+        decision_id: UUID,
+        review_id: UUID,
+        payload: ReviewOutcomeRequest,
+    ) -> ReviewOutcomeResult:
+        membership, decision = await self._context(
+            current_user.id,
+            workspace_id,
+            decision_id,
+        )
+        if not can_manage_reviews(membership.role):
+            raise ReviewAccessDeniedError
+        self._require_locked(decision)
+        review = await self._require_review(decision_id, review_id)
+        if review.status is not ReviewStatus.SCHEDULED:
+            raise ReviewOutcomeInvalidError
+
+        now = datetime.now(UTC)
+        if review.scheduled_for > now:
+            raise ReviewNotDueError
+
+        if payload.outcome is ReviewOutcome.CONFIRMED:
+            completed = await self._records.complete_review(
+                review,
+                outcome=payload.outcome,
+                rationale=payload.rationale,
+                completed_by_id=current_user.id,
+                completed_at=now,
+            )
+            return ReviewOutcomeResult(completed, None, None)
+
+        decision_lock = await self._records.get_decision_lock(decision.id)
+        if decision_lock is None:
+            raise ReviewOutcomeInvalidError
+        root_decision_id = await self._records.get_revision_root(decision.id)
+        revision_number = await self._records.next_revision_number(root_decision_id)
+        successor = Decision(
+            id=uuid4(),
+            workspace_id=decision.workspace_id,
+            created_by_id=current_user.id,
+            title=payload.successor_title or decision.title,
+            summary=(
+                payload.successor_summary
+                if payload.successor_summary is not None
+                else decision.summary
+            ),
+            category=payload.successor_category or decision.category,
+            status=DecisionStatus.DRAFT,
+            due_at=None,
+            review_at=None,
+        )
+        revision = DecisionRevision(
+            id=uuid4(),
+            root_decision_id=root_decision_id,
+            predecessor_decision_id=decision.id,
+            successor_decision_id=successor.id,
+            source_lock_id=decision_lock.id,
+            review_id=review.id,
+            created_by_id=current_user.id,
+            revision_number=revision_number,
+            outcome=payload.outcome,
+            rationale=payload.rationale,
+        )
+        (
+            completed,
+            created_revision,
+            created_successor,
+        ) = await self._records.complete_review_with_revision(
+            review,
+            successor,
+            revision,
+            completed_by_id=current_user.id,
+            completed_at=now,
+        )
+        return ReviewOutcomeResult(
+            completed,
+            created_revision,
+            created_successor,
+        )
+
+    async def list_revisions(
+        self,
+        current_user: User,
+        workspace_id: UUID,
+        decision_id: UUID,
+    ) -> list[DecisionRevision]:
+        await self._context(current_user.id, workspace_id, decision_id)
+        root_decision_id = await self._records.get_revision_root(decision_id)
+        return await self._records.list_revisions(root_decision_id)
+
+    async def get_revision(
+        self,
+        current_user: User,
+        workspace_id: UUID,
+        decision_id: UUID,
+        revision_id: UUID,
+    ) -> DecisionRevision:
+        await self._context(current_user.id, workspace_id, decision_id)
+        root_decision_id = await self._records.get_revision_root(decision_id)
+        revision = await self._records.get_revision(root_decision_id, revision_id)
+        if revision is None:
+            raise DecisionRevisionNotFoundError
+        return revision
 
     async def _context(
         self,

@@ -6,18 +6,25 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.core.exceptions import ActionAssigneeInvalidError, ReviewConflictError
+from app.core.exceptions import (
+    ActionAssigneeInvalidError,
+    ReviewConflictError,
+    ReviewNotDueError,
+)
 from app.dependencies.action_review import get_action_review_service
 from app.dependencies.auth import get_current_user
 from app.main import app
 from app.models.action_review import (
     ActionStatus,
     DecisionReview,
+    DecisionRevision,
     ImplementationAction,
+    ReviewOutcome,
     ReviewStatus,
 )
+from app.models.decision import Decision, DecisionCategory, DecisionStatus
 from app.models.user import User
-from app.services.action_review import ActionReviewService
+from app.services.action_review import ActionReviewService, ReviewOutcomeResult
 
 
 @pytest.fixture
@@ -155,6 +162,67 @@ async def test_schedule_list_and_cancel_review(
     assert cancel_response.status_code == 200
 
 
+async def test_complete_review_with_revision_and_list_history(
+    client: AsyncClient,
+    current_user: User,
+    action_review_service: AsyncMock,
+) -> None:
+    workspace_id = uuid4()
+    decision_id = uuid4()
+    review = make_review(current_user, decision_id)
+    review.status = ReviewStatus.COMPLETED
+    review.outcome = ReviewOutcome.REOPENED
+    review.outcome_rationale = "Production evidence changed."
+    review.completed_by_id = current_user.id
+    review.completed_at = datetime(2026, 11, 1, tzinfo=UTC)
+    successor = Decision(
+        id=uuid4(),
+        workspace_id=workspace_id,
+        created_by_id=current_user.id,
+        title="Choose the backend framework",
+        category=DecisionCategory.TECHNOLOGY,
+        status=DecisionStatus.DRAFT,
+        created_at=review.completed_at,
+        updated_at=review.completed_at,
+    )
+    revision = DecisionRevision(
+        id=uuid4(),
+        root_decision_id=decision_id,
+        predecessor_decision_id=decision_id,
+        successor_decision_id=successor.id,
+        source_lock_id=uuid4(),
+        review_id=review.id,
+        created_by_id=current_user.id,
+        revision_number=1,
+        outcome=ReviewOutcome.REOPENED,
+        rationale=review.outcome_rationale,
+        created_at=review.completed_at,
+    )
+    action_review_service.complete_review.return_value = ReviewOutcomeResult(
+        review,
+        revision,
+        successor,
+    )
+    action_review_service.list_revisions.return_value = [revision]
+    path = f"{base_path(workspace_id, decision_id)}/reviews/{review.id}/outcome"
+
+    response = await client.post(
+        path,
+        json={
+            "outcome": "reopened",
+            "rationale": revision.rationale,
+        },
+    )
+    history_response = await client.get(f"{base_path(workspace_id, decision_id)}/revisions")
+
+    assert response.status_code == 200
+    assert response.json()["review"]["outcome"] == "reopened"
+    assert response.json()["revision"]["revision_number"] == 1
+    assert response.json()["successor_decision"]["status"] == "draft"
+    assert history_response.status_code == 200
+    assert history_response.json()[0]["successor_decision_id"] == str(successor.id)
+
+
 @pytest.mark.parametrize(
     ("error", "status_code", "detail"),
     [
@@ -167,6 +235,11 @@ async def test_schedule_list_and_cancel_review(
             ReviewConflictError(),
             409,
             "The decision already has a scheduled review",
+        ),
+        (
+            ReviewNotDueError(),
+            409,
+            "The decision review is not due yet",
         ),
     ],
 )

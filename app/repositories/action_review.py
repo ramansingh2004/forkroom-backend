@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,9 +10,12 @@ from app.core.exceptions import ReviewConflictError
 from app.models.action_review import (
     ActionStatus,
     DecisionReview,
+    DecisionRevision,
     ImplementationAction,
+    ReviewOutcome,
     ReviewStatus,
 )
+from app.models.decision import Decision, DecisionLock
 
 
 class ActionReviewRepository:
@@ -137,3 +140,82 @@ class ActionReviewRepository:
         await self._session.commit()
         await self._session.refresh(review)
         return review
+
+    async def get_decision_lock(self, decision_id: UUID) -> DecisionLock | None:
+        statement = select(DecisionLock).where(DecisionLock.decision_id == decision_id)
+        return cast(DecisionLock | None, await self._session.scalar(statement))
+
+    async def get_revision_root(self, decision_id: UUID) -> UUID:
+        statement = select(DecisionRevision.root_decision_id).where(
+            DecisionRevision.successor_decision_id == decision_id
+        )
+        return cast(UUID | None, await self._session.scalar(statement)) or decision_id
+
+    async def next_revision_number(self, root_decision_id: UUID) -> int:
+        statement = select(func.coalesce(func.max(DecisionRevision.revision_number), 0) + 1).where(
+            DecisionRevision.root_decision_id == root_decision_id
+        )
+        return int(await self._session.scalar(statement) or 1)
+
+    async def complete_review(
+        self,
+        review: DecisionReview,
+        *,
+        outcome: ReviewOutcome,
+        rationale: str,
+        completed_by_id: UUID,
+        completed_at: datetime,
+    ) -> DecisionReview:
+        review.status = ReviewStatus.COMPLETED
+        review.outcome = outcome
+        review.outcome_rationale = rationale
+        review.completed_by_id = completed_by_id
+        review.completed_at = completed_at
+        await self._session.commit()
+        await self._session.refresh(review)
+        return review
+
+    async def complete_review_with_revision(
+        self,
+        review: DecisionReview,
+        successor: Decision,
+        revision: DecisionRevision,
+        *,
+        completed_by_id: UUID,
+        completed_at: datetime,
+    ) -> tuple[DecisionReview, DecisionRevision, Decision]:
+        review.status = ReviewStatus.COMPLETED
+        review.outcome = revision.outcome
+        review.outcome_rationale = revision.rationale
+        review.completed_by_id = completed_by_id
+        review.completed_at = completed_at
+        self._session.add(successor)
+        self._session.add(revision)
+        try:
+            await self._session.commit()
+        except IntegrityError as error:
+            await self._session.rollback()
+            raise ReviewConflictError from error
+        await self._session.refresh(review)
+        await self._session.refresh(revision)
+        await self._session.refresh(successor)
+        return review, revision, successor
+
+    async def list_revisions(self, root_decision_id: UUID) -> list[DecisionRevision]:
+        statement = (
+            select(DecisionRevision)
+            .where(DecisionRevision.root_decision_id == root_decision_id)
+            .order_by(DecisionRevision.revision_number.asc())
+        )
+        return list((await self._session.scalars(statement)).all())
+
+    async def get_revision(
+        self,
+        root_decision_id: UUID,
+        revision_id: UUID,
+    ) -> DecisionRevision | None:
+        statement = select(DecisionRevision).where(
+            DecisionRevision.id == revision_id,
+            DecisionRevision.root_decision_id == root_decision_id,
+        )
+        return cast(DecisionRevision | None, await self._session.scalar(statement))
