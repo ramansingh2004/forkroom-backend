@@ -97,6 +97,25 @@ Decision locking currently includes:
 - database uniqueness for one lock per decision and voting session
 - a terminal `locked` decision state that prevents silent edits or reopening
 
+Implementation tracking currently includes:
+
+- implementation actions connected directly to locked decisions
+- owner/admin assignment to eligible owner, admin, or member participants
+- todo, in-progress, blocked, completed, and cancelled action states
+- assignee-owned progress transitions with owner/admin oversight
+- optional action descriptions and timezone-aware due dates
+- database-validated completion and cancellation timestamps
+- terminal completed and cancelled actions retained as durable history
+
+Scheduled decision reviews currently include:
+
+- owner/admin review scheduling for locked decisions
+- one active scheduled review per decision
+- timezone-aware future review dates and optional review notes
+- review rescheduling and cancellation without deleting history
+- workspace-member read access to action and review records
+- PostgreSQL records ready for later Celery reminder jobs
+
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
 
@@ -197,7 +216,8 @@ SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 7. Proposal branches and weighted comparison criteria
 8. Structured objections and resolution tracking
 9. Quorum-based voting (this milestone)
-10. Decision locking and immutable records (this milestone)
+10. Decision locking and immutable records
+11. Owned implementation actions and scheduled reviews (this milestone)
 
 ## Decision lifecycle
 
@@ -302,5 +322,35 @@ session from approving multiple decisions. Creating the lock atomically moves
 the decision to the terminal `locked` state. Future corrections will create an
 explicit revision rather than overwrite this approved record.
 
-The next milestone adds owned implementation actions and scheduled decision
-reviews while retaining this immutable lock history.
+Owned implementation actions and scheduled reviews extend this immutable lock
+history without changing the approved snapshot.
+
+## Implementation action workflow
+
+Owners and admins can add implementation actions only after a decision has been
+locked. Every action has one eligible assignee from the workspace; viewers
+cannot be assigned implementation work. Actions begin as `todo`.
+
+```text
+todo <-> in_progress <-> blocked
+  \          |           /
+   +---------+-----------> completed
+   +---------+-----------> cancelled
+```
+
+The assignee, owner, or admin can move an action among active states or finish
+it. Completed and cancelled actions are terminal and remain attached to the
+locked decision as implementation history. Only owners and admins can edit the
+action title, description, assignee, or due date.
+
+## Scheduled review workflow
+
+Owners and admins can schedule a future review for a locked decision. A partial
+unique index permits only one currently scheduled review for a decision, while
+cancelled records remain available as history. The scheduled date and notes can
+be updated until the review is cancelled.
+
+Review reminders will be dispatched through Celery Beat in the later async
+platform milestone. The next lifecycle milestone will record review outcomes:
+reconfirming the lock, reopening through an explicit revision, or superseding
+the decision without modifying its immutable snapshot.

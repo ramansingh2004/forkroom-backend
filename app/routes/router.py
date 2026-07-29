@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.routes.v1.action_reviews import router as action_reviews_router
 from app.routes.v1.auth import router as auth_router
 from app.routes.v1.decision_locks import router as decision_locks_router
 from app.routes.v1.decisions import router as decisions_router
@@ -18,3 +19,4 @@ api_router.include_router(decision_locks_router)
 api_router.include_router(proposals_router)
 api_router.include_router(objections_router)
 api_router.include_router(voting_router)
+api_router.include_router(action_reviews_router)

@@ -148,3 +148,35 @@ class DecisionLockConflictError(Exception):
 
 class DecisionLockInvalidResultError(Exception):
     """Raised when a voting result is not eligible to lock a decision."""
+
+
+class ActionNotFoundError(Exception):
+    """Raised when an implementation action does not exist for a decision."""
+
+
+class ActionAccessDeniedError(Exception):
+    """Raised when a role or assignment forbids an action operation."""
+
+
+class ActionInvalidTransitionError(Exception):
+    """Raised when an implementation action status transition is invalid."""
+
+
+class ActionAssigneeInvalidError(Exception):
+    """Raised when an action assignee is not an eligible workspace member."""
+
+
+class ReviewNotFoundError(Exception):
+    """Raised when a scheduled decision review does not exist."""
+
+
+class ReviewAccessDeniedError(Exception):
+    """Raised when a workspace role cannot manage decision reviews."""
+
+
+class ReviewConflictError(Exception):
+    """Raised when a decision already has a scheduled review."""
+
+
+class ReviewInvalidScheduleError(Exception):
+    """Raised when a review date or review state is invalid."""

@@ -6,6 +6,10 @@ Import every model in ``import_all_models`` so Alembic can discover it.
 
 def import_all_models() -> None:
     """Import model modules before Alembic reads Base.metadata."""
+    from app.models.action_review import (  # noqa: F401
+        DecisionReview,
+        ImplementationAction,
+    )
     from app.models.decision import Decision, DecisionLock  # noqa: F401
     from app.models.objection import Objection, ObjectionStatusEvent  # noqa: F401
     from app.models.proposal import (  # noqa: F401
