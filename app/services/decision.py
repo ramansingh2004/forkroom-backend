@@ -33,6 +33,7 @@ ALLOWED_TRANSITIONS: dict[DecisionStatus, set[DecisionStatus]] = {
         DecisionStatus.ACTIVE,
         DecisionStatus.ARCHIVED,
     },
+    DecisionStatus.LOCKED: set(),
     DecisionStatus.ARCHIVED: set(),
 }
 
@@ -145,6 +146,8 @@ class DecisionService:
         if not can_write_decisions(membership.role):
             raise DecisionAccessDeniedError
         decision = await self._require_decision(workspace_id, decision_id)
+        if decision.status is DecisionStatus.LOCKED:
+            raise DecisionImmutableError
         if payload.status not in ALLOWED_TRANSITIONS[decision.status]:
             raise DecisionInvalidTransitionError
 

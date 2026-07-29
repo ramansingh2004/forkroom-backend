@@ -132,3 +132,19 @@ class VoteAlreadyCastError(Exception):
 
 class VotingResultUnavailableError(Exception):
     """Raised when results are requested before a voting session is closed."""
+
+
+class DecisionLockNotFoundError(Exception):
+    """Raised when a decision has no immutable lock record."""
+
+
+class DecisionLockAccessDeniedError(Exception):
+    """Raised when a workspace role cannot lock a decision."""
+
+
+class DecisionLockConflictError(Exception):
+    """Raised when a decision or voting session has already been locked."""
+
+
+class DecisionLockInvalidResultError(Exception):
+    """Raised when a voting result is not eligible to lock a decision."""

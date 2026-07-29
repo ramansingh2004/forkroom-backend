@@ -100,5 +100,6 @@ class DecisionResponse(BaseModel):
     review_at: datetime | None
     closed_at: datetime | None
     archived_at: datetime | None
+    locked_at: datetime | None
     created_at: datetime
     updated_at: datetime

@@ -44,7 +44,7 @@ def _raise_decision_error(error: Exception) -> None:
     if isinstance(error, DecisionImmutableError):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Closed or archived decisions cannot be changed",
+            detail="Closed, locked, or archived decisions cannot be changed",
         ) from error
     raise error
 

@@ -85,6 +85,18 @@ Quorum-based voting currently includes:
 - configurable quorum percentages with invalid below-quorum outcomes
 - proposal tallies, tie detection, and a winner only for valid non-tied results
 
+Decision locking currently includes:
+
+- owner/admin locking from a closed, quorum-valid, non-tied voting result
+- a second blocking-objection check immediately before locking
+- immutable snapshots of decision metadata and the winning proposal
+- aggregate quorum, tally, winner, and tie outcome preservation
+- dissent preservation through losing proposal and objection snapshots
+- SHA-256 hashes over canonical JSON snapshots
+- hash verification without exposing individual participant ballots
+- database uniqueness for one lock per decision and voting session
+- a terminal `locked` decision state that prevents silent edits or reopening
+
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
 
@@ -185,6 +197,7 @@ SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 7. Proposal branches and weighted comparison criteria
 8. Structured objections and resolution tracking
 9. Quorum-based voting (this milestone)
+10. Decision locking and immutable records (this milestone)
 
 ## Decision lifecycle
 
@@ -204,10 +217,12 @@ Allowed transitions:
 - `draft` to `active` or `archived`
 - `active` to `closed` or `archived`
 - `closed` to `active` or `archived`
+- a valid voting outcome moves `active` to terminal `locked`
+- `locked` can change only through a future explicit revision
 - `archived` is terminal
 
-Closed and archived decisions cannot be edited. Only draft decisions can be
-deleted, and deletion requires an owner or admin role.
+Closed, locked, and archived decisions cannot be edited. Only draft decisions
+can be deleted, and deletion requires an owner or admin role.
 
 ## Proposal comparison workflow
 
@@ -268,5 +283,24 @@ A below-quorum result is retained for auditability but marked invalid and has
 no winner. Cancelling a draft or open session is terminal; a later revote uses
 a new voting session and preserves the earlier record.
 
-The next milestone locks an approved decision, preserves the winning proposal,
-vote outcome, dissent, and document hash, and prevents silent edits.
+## Decision locking workflow
+
+An owner or admin can lock an active decision only from a closed voting session
+that met quorum and produced one winner. ForkRoom checks again for unresolved
+blocking objections immediately before locking so a concern raised after voting
+opened cannot be skipped.
+
+The lock stores a canonical JSON snapshot containing the decision metadata,
+winning proposal content, aggregate vote outcome, losing alternatives, and
+objection records. Individual ballots and voter identities are not copied into
+the snapshot. A SHA-256 document hash makes later snapshot changes detectable
+through the verification endpoint.
+
+The lock row, winner, and voting session are protected by foreign keys, while
+unique constraints enforce one lock per decision and prevent the same voting
+session from approving multiple decisions. Creating the lock atomically moves
+the decision to the terminal `locked` state. Future corrections will create an
+explicit revision rather than overwrite this approved record.
+
+The next milestone adds owned implementation actions and scheduled decision
+reviews while retaining this immutable lock history.

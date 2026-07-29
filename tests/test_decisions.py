@@ -153,7 +153,7 @@ async def test_closed_decision_update_returns_conflict(
     )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "Closed or archived decisions cannot be changed"}
+    assert response.json() == {"detail": "Closed, locked, or archived decisions cannot be changed"}
 
 
 async def test_delete_draft_decision(
