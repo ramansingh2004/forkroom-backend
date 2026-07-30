@@ -25,3 +25,7 @@ dist/
 build/
 *.log
 
+# Node.js
+node_modules/
+collaboration/node_modules/
+collaboration/dist/

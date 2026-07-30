@@ -28,6 +28,13 @@ class DecodedToken:
     expires_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class CollaborationToken:
+    token: str
+    expires_in: int
+    expires_at: datetime
+
+
 def hash_password(password: str) -> str:
     """Hash a password with Argon2 using pwdlib's recommended settings."""
     return password_hasher.hash(password)
@@ -161,4 +168,41 @@ def decode_refresh_token(token: str) -> DecodedToken:
         token=token,
         expected_type="refresh",
         secret=get_settings().jwt_refresh_secret,
+    )
+
+
+def create_collaboration_token(
+    *,
+    user_id: UUID,
+    workspace_id: UUID,
+    decision_id: UUID,
+    proposal_id: UUID,
+    document_name: str,
+    permission: str,
+    display_name: str,
+) -> CollaborationToken:
+    """Create a short-lived, document-scoped token for Hocuspocus."""
+    settings = get_settings()
+    now = datetime.now(UTC)
+    expires_delta = timedelta(minutes=settings.collaboration_token_expire_minutes)
+    expires_at = now + expires_delta
+    payload = {
+        "sub": str(user_id),
+        "type": "collaboration",
+        "jti": str(uuid4()),
+        "iss": "forkroom-api",
+        "aud": "forkroom-collaboration",
+        "workspace_id": str(workspace_id),
+        "decision_id": str(decision_id),
+        "proposal_id": str(proposal_id),
+        "document_name": document_name,
+        "permission": permission,
+        "display_name": display_name,
+        "iat": now,
+        "exp": expires_at,
+    }
+    return CollaborationToken(
+        token=jwt.encode(payload, settings.jwt_collaboration_secret, algorithm=JWT_ALGORITHM),
+        expires_in=int(expires_delta.total_seconds()),
+        expires_at=expires_at,
     )

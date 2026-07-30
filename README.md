@@ -3,7 +3,8 @@
 Backend monorepository for ForkRoom, a real-time collaborative decision
 workspace.
 
-This first milestone contains the FastAPI foundation:
+The repository currently contains the FastAPI API and the TypeScript
+Hocuspocus collaboration service:
 
 - versioned API routing
 - validated environment configuration
@@ -14,8 +15,8 @@ This first milestone contains the FastAPI foundation:
 - Docker Compose services for PostgreSQL, Redis, and Mailpit
 - Ruff, mypy, Pytest, and HTTPX configuration
 
-The Hocuspocus collaboration service, Celery workers, RabbitMQ, and MinIO will
-be added in later milestones.
+Celery workers, RabbitMQ, MinIO, WebRTC infrastructure, and the production
+observability stack remain later milestones.
 
 Authentication currently includes:
 
@@ -375,3 +376,50 @@ POST /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/reviews/{review_i
 GET  /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/revisions
 GET  /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/revisions/{revision_id}
 ```
+
+## Collaborative editor backend
+
+ForkRoom keeps the collaboration service in this backend repository while
+preserving clear service ownership:
+
+- FastAPI validates workspace, decision, proposal and user permissions.
+- `POST .../proposals/{proposal_id}/collaboration-token` creates a five-minute,
+  document-scoped JWT for the browser's Hocuspocus provider.
+- Owners, admins and members receive write access only while the decision and
+  proposal are mutable. Viewers and submitted/locked content are read-only.
+- Hocuspocus validates issuer, audience, expiry, document name and WebSocket
+  origin before accepting a connection.
+- Yjs document state is stored as binary data in PostgreSQL and versioned on
+  every persisted snapshot.
+- Redis synchronizes Yjs rooms across Hocuspocus replicas and holds expiring
+  connection-presence records. Presence is never treated as durable history.
+
+Run the collaboration service locally:
+
+```bash
+cd collaboration
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+Or start PostgreSQL, Redis, Mailpit and the collaboration service together:
+
+```bash
+docker compose up -d --build
+```
+
+The frontend first requests a collaboration token from FastAPI, then connects
+its Hocuspocus provider to `COLLABORATION_URL` using the returned
+`document_name` and token. The collaboration secret must match in the FastAPI
+and TypeScript service environments.
+
+Apply the collaboration migration before starting Hocuspocus:
+
+```bash
+uv run alembic upgrade head
+uv run alembic current
+```
+
+The expected Alembic head for this milestone is `a3c5e7f9b1d4`.

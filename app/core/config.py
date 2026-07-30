@@ -30,8 +30,14 @@ class Settings(BaseSettings):
         default="development-refresh-secret-change-me-32",
         min_length=32,
     )
+    jwt_collaboration_secret: str = Field(
+        default="development-collaboration-secret-32",
+        min_length=32,
+    )
     access_token_expire_minutes: int = Field(default=15, gt=0)
     refresh_token_expire_days: int = Field(default=7, gt=0)
+    collaboration_token_expire_minutes: int = Field(default=5, gt=0, le=15)
+    collaboration_url: str = "ws://localhost:1234"
 
     frontend_url: str = "http://localhost:3000"
     mail_from_address: str = "noreply@forkroom.local"

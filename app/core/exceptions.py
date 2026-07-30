@@ -192,3 +192,11 @@ class ReviewOutcomeInvalidError(Exception):
 
 class DecisionRevisionNotFoundError(Exception):
     """Raised when a decision revision does not exist in the requested history."""
+
+
+class CollaborationDocumentNotFoundError(Exception):
+    """Raised when a collaborative document target does not exist."""
+
+
+class CollaborationAccessDeniedError(Exception):
+    """Raised when a user cannot access a collaborative document."""

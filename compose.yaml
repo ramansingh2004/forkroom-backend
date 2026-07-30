@@ -39,6 +39,27 @@ services:
       - "8025:8025"
     restart: unless-stopped
 
+  collaboration:
+    build:
+      context: ./collaboration
+    environment:
+      COLLABORATION_HOST: 0.0.0.0
+      COLLABORATION_PORT: 1234
+      COLLABORATION_ALLOWED_ORIGINS: http://localhost:3000
+      JWT_COLLABORATION_SECRET: ${JWT_COLLABORATION_SECRET:-development-collaboration-secret-32}
+      DATABASE_URL: postgresql://forkroom:forkroom@postgres:5432/forkroom
+      REDIS_URL: redis://redis:6379/0
+      PRESENCE_TTL_SECONDS: 60
+      LOG_LEVEL: info
+    ports:
+      - "1234:1234"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   forkroom_postgres_data:
   forkroom_redis_data:
