@@ -56,6 +56,25 @@ services:
       - "8025:8025"
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: forkroom
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-forkroom-development-secret}
+      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:3000
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - forkroom_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -70,6 +89,11 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-development-access-secret-change-me-32}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-development-refresh-secret-change-me-32}
       JWT_COLLABORATION_SECRET: ${JWT_COLLABORATION_SECRET:-development-collaboration-secret-32}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: forkroom
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-forkroom-development-secret}
+      MINIO_BUCKET: forkroom-attachments
     ports:
       - "8000:8000"
     depends_on:
@@ -78,6 +102,8 @@ services:
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     restart: unless-stopped
 
@@ -112,7 +138,7 @@ services:
         "app.workers.celery_app:celery_app",
         "worker",
         "--loglevel=INFO",
-        "--queues=notifications.email,scheduler",
+        "--queues=notifications.email,scheduler,files.process",
       ]
     environment: &worker-environment
       DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@postgres:5432/forkroom
@@ -122,12 +148,19 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
       FRONTEND_URL: http://localhost:3000
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: forkroom
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-forkroom-development-secret}
+      MINIO_BUCKET: forkroom-attachments
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     restart: unless-stopped
 
@@ -157,3 +190,4 @@ volumes:
   forkroom_postgres_data:
   forkroom_redis_data:
   forkroom_rabbitmq_data:
+  forkroom_minio_data:

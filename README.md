@@ -12,12 +12,12 @@ service, and Celery worker processes:
 - Redis client and dependency
 - liveness and readiness health checks
 - Alembic migration wiring
-- Docker Compose services for PostgreSQL, Redis, RabbitMQ, Mailpit, workers,
-  Beat, and Hocuspocus
+- Docker Compose services for PostgreSQL, Redis, RabbitMQ, MinIO, Mailpit,
+  workers, Beat, and Hocuspocus
 - Ruff, mypy, Pytest, and HTTPX configuration
 
-MinIO attachments, search indexing, PDF exports, WebRTC infrastructure, and
-the production observability stack remain later milestones.
+Search indexing, PDF exports, WebRTC infrastructure, and the production
+observability stack remain later milestones.
 
 Authentication currently includes:
 
@@ -130,6 +130,17 @@ Async notifications currently include:
 - stale delivery-lease recovery after worker crashes
 - authenticated list, unread-count, read, and read-all APIs
 
+Attachment storage currently includes:
+
+- workspace, decision, and proposal-scoped attachment metadata
+- direct browser uploads using short-lived presigned MinIO URLs
+- a 25 MiB configurable upload limit
+- owner, admin, and member uploads with viewer read-only access
+- Celery processing with actual-size validation and SHA-256 hashing
+- retry recovery and RabbitMQ dead-letter routing for failed processing
+- short-lived download URLs only after processing succeeds
+- soft-deleted metadata with object removal from MinIO
+
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
 
@@ -137,7 +148,7 @@ real email. Open http://localhost:8025 after registering or requesting a reset.
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
-- Docker Desktop (for PostgreSQL, Redis, RabbitMQ, and Mailpit)
+- Docker Desktop (for PostgreSQL, Redis, RabbitMQ, MinIO, and Mailpit)
 
 ## Local setup
 
@@ -147,7 +158,7 @@ cd forkroom-backend
 
 cp .env.example .env
 uv sync --dev
-docker compose up -d postgres redis rabbitmq mailpit
+docker compose up -d postgres redis rabbitmq minio mailpit
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
@@ -157,7 +168,7 @@ Windows Command Prompt:
 ```bat
 copy .env.example .env
 uv sync --dev
-docker compose up -d postgres redis rabbitmq mailpit
+docker compose up -d postgres redis rabbitmq minio mailpit
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
@@ -170,6 +181,8 @@ Open:
 - Readiness: http://localhost:8000/api/v1/health/ready
 - Mailpit inbox: http://localhost:8025
 - RabbitMQ management: http://localhost:15672
+- MinIO API: http://localhost:9000
+- MinIO console: http://localhost:9001
 
 ## Quality checks
 
@@ -217,8 +230,9 @@ docker compose logs -f postgres redis mailpit
 docker compose down
 ```
 
-PostgreSQL is exposed on `localhost:5434`, Redis on `localhost:6379`, Mailpit
-SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
+PostgreSQL is exposed on `localhost:5434`, Redis on `localhost:6379`, MinIO on
+`localhost:9000` with its console on `localhost:9001`, Mailpit SMTP on
+`localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 
 ## First development sequence
 
@@ -233,6 +247,9 @@ SMTP on `localhost:1025`, and the Mailpit inbox on `localhost:8025`.
 9. Quorum-based voting (this milestone)
 10. Decision locking and immutable records
 11. Owned implementation actions and scheduled reviews (this milestone)
+12. Collaborative editor and Redis presence
+13. RabbitMQ, Celery reminders, and durable notifications
+14. MinIO attachments and asynchronous file processing (this milestone)
 
 ## Decision lifecycle
 
@@ -438,9 +455,10 @@ uv run alembic current
 
 ## Async notification platform
 
-Celery Beat runs two periodic jobs. Every minute it discovers work due within
-the configured reminder window, and every five minutes it recovers delivery
-leases left behind by interrupted workers. Discovery covers:
+Celery Beat runs three periodic jobs. Every minute it discovers work due within
+the configured reminder window. Every five minutes it recovers delivery leases
+left behind by interrupted notification workers and republishes attachment
+processing records that still need work. Reminder discovery covers:
 
 - active implementation actions assigned to a participant
 - scheduled decision reviews for owners and admins
@@ -468,6 +486,40 @@ POST /api/v1/notifications/{notification_id}/read
 POST /api/v1/notifications/read-all
 ```
 
+## Attachment workflow
+
+The browser never sends large attachment bodies through FastAPI. It first asks
+FastAPI for a short-lived upload URL, uploads directly to MinIO, and then tells
+FastAPI that the upload is complete:
+
+```text
+POST /api/v1/workspaces/{workspace_id}/attachments/uploads
+PUT  {upload_url}
+POST /api/v1/workspaces/{workspace_id}/attachments/{attachment_id}/complete
+```
+
+The completion call changes the durable PostgreSQL record from `pending` to
+`processing` and publishes `forkroom.attachments.process` to the
+`files.process` RabbitMQ queue. A Celery worker checks the object size, rejects
+objects above the configured limit or with a size mismatch, computes SHA-256,
+and marks the attachment `available`. Exhausted jobs are recorded as `rejected`
+and routed to `files.failed`.
+
+Workspace members can list metadata and request a download URL only for an
+available object:
+
+```text
+GET    /api/v1/workspaces/{workspace_id}/attachments
+GET    /api/v1/workspaces/{workspace_id}/attachments/{attachment_id}
+POST   /api/v1/workspaces/{workspace_id}/attachments/{attachment_id}/download
+DELETE /api/v1/workspaces/{workspace_id}/attachments/{attachment_id}
+```
+
+Use `decision_id` and `proposal_id` query parameters to filter evidence.
+`proposal_id` always requires its parent `decision_id`. The upload creator can
+delete their own file; owners and admins can remove any workspace attachment.
+Viewers can list and download but cannot upload.
+
 Start the complete local stack:
 
 ```bash
@@ -481,4 +533,4 @@ uv run alembic upgrade head
 uv run alembic current
 ```
 
-The expected Alembic head is `b4d6f8a2c5e7`.
+The expected Alembic head is `c5e7a9b3d6f8`.

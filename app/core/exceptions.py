@@ -204,3 +204,27 @@ class CollaborationAccessDeniedError(Exception):
 
 class NotificationNotFoundError(Exception):
     """Raised when a notification is not owned by the requesting user."""
+
+
+class AttachmentNotFoundError(Exception):
+    """Raised when an attachment is not visible in the requested workspace."""
+
+
+class AttachmentAccessDeniedError(Exception):
+    """Raised when a workspace role cannot perform an attachment operation."""
+
+
+class AttachmentInvalidTargetError(Exception):
+    """Raised when an attachment target is missing or outside its workspace."""
+
+
+class AttachmentInvalidStateError(Exception):
+    """Raised when an attachment lifecycle transition is invalid."""
+
+
+class AttachmentTooLargeError(Exception):
+    """Raised when an attachment exceeds the configured size limit."""
+
+
+class AttachmentValidationError(ValueError):
+    """Raised when a stored object fails permanent file validation."""

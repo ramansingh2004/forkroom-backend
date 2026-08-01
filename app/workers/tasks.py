@@ -7,9 +7,14 @@ from celery.exceptions import Reject
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory
+from app.core.exceptions import AttachmentValidationError
 from app.integrations.email import EmailService
+from app.integrations.object_storage import ObjectStorage
+from app.models.attachment import AttachmentStatus
 from app.models.notification import Notification
+from app.repositories.attachment import AttachmentRepository
 from app.repositories.notification import NotificationRepository
+from app.services.attachment import AttachmentProcessingService
 from app.services.notification import NotificationPublisher, ReminderDiscoveryService
 from app.workers.celery_app import celery_app
 
@@ -111,6 +116,80 @@ def discover_reminders() -> int:
 @celery_app.task(name="forkroom.notifications.recover")  # type: ignore[untyped-decorator]
 def recover_stale_notification_deliveries() -> int:
     return asyncio.run(_recover_stale_deliveries())
+
+
+async def _process_attachment(attachment_id: UUID) -> str:
+    async with async_session_factory() as session:
+        service = AttachmentProcessingService(
+            AttachmentRepository(session),
+            ObjectStorage(settings),
+            max_bytes=settings.attachment_max_bytes,
+        )
+        return await service.process(attachment_id)
+
+
+async def _reject_attachment(attachment_id: UUID, error: Exception) -> None:
+    async with async_session_factory() as session:
+        repository = AttachmentRepository(session)
+        attachment = await repository.get_by_id(attachment_id)
+        if attachment is not None and attachment.status is AttachmentStatus.PROCESSING:
+            await repository.mark_rejected(
+                attachment,
+                error=str(error),
+                processed_at=datetime.now(UTC),
+            )
+
+
+async def _attachment_attempt_limit_reached(attachment_id: UUID) -> bool:
+    async with async_session_factory() as session:
+        attachment = await AttachmentRepository(session).get_by_id(attachment_id)
+        return bool(
+            attachment is not None
+            and attachment.processing_attempts >= settings.attachment_processing_max_attempts
+        )
+
+
+async def _recover_attachment_processing() -> int:
+    async with async_session_factory() as session:
+        attachments = await AttachmentRepository(session).list_processing()
+    for attachment in attachments:
+        process_attachment.apply_async(args=[str(attachment.id)])
+    return len(attachments)
+
+
+@celery_app.task(name="forkroom.attachments.recover")  # type: ignore[untyped-decorator]
+def recover_attachment_processing() -> int:
+    return asyncio.run(_recover_attachment_processing())
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="forkroom.attachments.process",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)  # type: ignore[untyped-decorator]
+def process_attachment(self: Task, attachment_id: str) -> str:
+    parsed_id = UUID(attachment_id)
+    try:
+        return asyncio.run(_process_attachment(parsed_id))
+    except AttachmentValidationError as error:
+        asyncio.run(_reject_attachment(parsed_id, error))
+        raise Reject(str(error), requeue=False) from error
+    except Exception as error:
+        retries = int(self.request.retries)
+        if asyncio.run(_attachment_attempt_limit_reached(parsed_id)):
+            asyncio.run(_reject_attachment(parsed_id, error))
+            raise Reject(str(error), requeue=False) from error
+        countdown = min(
+            settings.notification_retry_base_seconds * (2**retries),
+            settings.notification_retry_max_seconds,
+        )
+        raise self.retry(
+            exc=error,
+            countdown=countdown,
+            max_retries=settings.attachment_processing_max_attempts - 1,
+        ) from error
 
 
 @celery_app.task(

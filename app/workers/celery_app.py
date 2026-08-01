@@ -6,6 +6,7 @@ from app.core.config import get_settings
 settings = get_settings()
 
 notification_exchange = Exchange("notifications", type="direct", durable=True)
+file_exchange = Exchange("files", type="direct", durable=True)
 dead_letter_exchange = Exchange("dead-letter", type="direct", durable=True)
 
 celery_app = Celery(
@@ -47,6 +48,22 @@ celery_app.conf.update(
             durable=True,
         ),
         Queue("scheduler", durable=True),
+        Queue(
+            "files.process",
+            exchange=file_exchange,
+            routing_key="files.process",
+            durable=True,
+            queue_arguments={
+                "x-dead-letter-exchange": "dead-letter",
+                "x-dead-letter-routing-key": "files.failed",
+            },
+        ),
+        Queue(
+            "files.failed",
+            exchange=dead_letter_exchange,
+            routing_key="files.failed",
+            durable=True,
+        ),
     ),
     task_routes={
         "forkroom.notifications.deliver": {
@@ -55,6 +72,11 @@ celery_app.conf.update(
         },
         "forkroom.reminders.discover": {"queue": "scheduler"},
         "forkroom.notifications.recover": {"queue": "scheduler"},
+        "forkroom.attachments.process": {
+            "queue": "files.process",
+            "routing_key": "files.process",
+        },
+        "forkroom.attachments.recover": {"queue": "scheduler"},
     },
     beat_schedule={
         "discover-due-reminders": {
@@ -63,6 +85,10 @@ celery_app.conf.update(
         },
         "recover-stale-notification-deliveries": {
             "task": "forkroom.notifications.recover",
+            "schedule": 300.0,
+        },
+        "recover-pending-attachment-processing": {
+            "task": "forkroom.attachments.recover",
             "schedule": 300.0,
         },
     },
