@@ -200,3 +200,7 @@ class CollaborationDocumentNotFoundError(Exception):
 
 class CollaborationAccessDeniedError(Exception):
     """Raised when a user cannot access a collaborative document."""
+
+
+class NotificationNotFoundError(Exception):
+    """Raised when a notification is not owned by the requesting user."""

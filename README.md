@@ -3,8 +3,8 @@
 Backend monorepository for ForkRoom, a real-time collaborative decision
 workspace.
 
-The repository currently contains the FastAPI API and the TypeScript
-Hocuspocus collaboration service:
+The repository contains the FastAPI API, TypeScript Hocuspocus collaboration
+service, and Celery worker processes:
 
 - versioned API routing
 - validated environment configuration
@@ -12,11 +12,12 @@ Hocuspocus collaboration service:
 - Redis client and dependency
 - liveness and readiness health checks
 - Alembic migration wiring
-- Docker Compose services for PostgreSQL, Redis, and Mailpit
+- Docker Compose services for PostgreSQL, Redis, RabbitMQ, Mailpit, workers,
+  Beat, and Hocuspocus
 - Ruff, mypy, Pytest, and HTTPX configuration
 
-Celery workers, RabbitMQ, MinIO, WebRTC infrastructure, and the production
-observability stack remain later milestones.
+MinIO attachments, search indexing, PDF exports, WebRTC infrastructure, and
+the production observability stack remain later milestones.
 
 Authentication currently includes:
 
@@ -115,7 +116,19 @@ Scheduled decision reviews currently include:
 - timezone-aware future review dates and optional review notes
 - review rescheduling and cancellation without deleting history
 - workspace-member read access to action and review records
-- PostgreSQL records ready for later Celery reminder jobs
+- Celery Beat scheduling for due review reminders
+
+Async notifications currently include:
+
+- RabbitMQ transport with dedicated delivery, scheduler, and dead-letter queues
+- Celery workers and Celery Beat scheduling
+- durable PostgreSQL notification and delivery-attempt state
+- action, decision-review, decision-deadline, and voting-close reminders
+- stable idempotency keys that prevent duplicate notifications
+- exponential retry delays with a configured maximum
+- failed-delivery dead-letter routing and durable failure details
+- stale delivery-lease recovery after worker crashes
+- authenticated list, unread-count, read, and read-all APIs
 
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
@@ -124,7 +137,7 @@ real email. Open http://localhost:8025 after registering or requesting a reset.
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
-- Docker Desktop (for PostgreSQL and Redis)
+- Docker Desktop (for PostgreSQL, Redis, RabbitMQ, and Mailpit)
 
 ## Local setup
 
@@ -134,7 +147,7 @@ cd forkroom-backend
 
 cp .env.example .env
 uv sync --dev
-docker compose up -d postgres redis mailpit
+docker compose up -d postgres redis rabbitmq mailpit
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
@@ -144,7 +157,7 @@ Windows Command Prompt:
 ```bat
 copy .env.example .env
 uv sync --dev
-docker compose up -d postgres redis mailpit
+docker compose up -d postgres redis rabbitmq mailpit
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
@@ -156,6 +169,7 @@ Open:
 - Liveness: http://localhost:8000/api/v1/health/live
 - Readiness: http://localhost:8000/api/v1/health/ready
 - Mailpit inbox: http://localhost:8025
+- RabbitMQ management: http://localhost:15672
 
 ## Quality checks
 
@@ -351,8 +365,8 @@ unique index permits only one currently scheduled review for a decision, while
 cancelled records remain available as history. The scheduled date and notes can
 be updated until the review is cancelled.
 
-Review reminders will be dispatched through Celery Beat in the later async
-platform milestone.
+Review reminders are discovered by Celery Beat and delivered by the durable
+notification workflow described below.
 
 When the scheduled time arrives, an owner or admin completes the review with
 one of three outcomes:
@@ -422,4 +436,49 @@ uv run alembic upgrade head
 uv run alembic current
 ```
 
-The expected Alembic head for this milestone is `a3c5e7f9b1d4`.
+## Async notification platform
+
+Celery Beat runs two periodic jobs. Every minute it discovers work due within
+the configured reminder window, and every five minutes it recovers delivery
+leases left behind by interrupted workers. Discovery covers:
+
+- active implementation actions assigned to a participant
+- scheduled decision reviews for owners and admins
+- active decision deadlines for participating members
+- open voting sessions for their snapshotted eligible voters
+
+Each reminder is first inserted into PostgreSQL with a unique idempotency key.
+Only a newly inserted row is published to RabbitMQ, so repeating Beat scans do
+not create duplicate notifications. RabbitMQ is transport only; the database
+retains the notification, attempt count, next attempt time, final result,
+failure reason, and read state.
+
+Temporary email failures use exponential backoff. A worker claims a delivery
+with a database lease before sending, preventing two workers from sending the
+same attempt. Exhausted jobs are marked `failed` and rejected into
+`notifications.failed` through RabbitMQ's dead-letter exchange.
+
+Notification API operations:
+
+```text
+GET  /api/v1/notifications
+GET  /api/v1/notifications/unread-count
+GET  /api/v1/notifications/{notification_id}
+POST /api/v1/notifications/{notification_id}/read
+POST /api/v1/notifications/read-all
+```
+
+Start the complete local stack:
+
+```bash
+docker compose up -d --build
+```
+
+Apply the latest migration before starting workers:
+
+```bash
+uv run alembic upgrade head
+uv run alembic current
+```
+
+The expected Alembic head is `b4d6f8a2c5e7`.

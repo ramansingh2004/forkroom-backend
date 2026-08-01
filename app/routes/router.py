@@ -6,6 +6,7 @@ from app.routes.v1.collaboration import router as collaboration_router
 from app.routes.v1.decision_locks import router as decision_locks_router
 from app.routes.v1.decisions import router as decisions_router
 from app.routes.v1.health import router as health_router
+from app.routes.v1.notifications import router as notifications_router
 from app.routes.v1.objections import router as objections_router
 from app.routes.v1.proposals import router as proposals_router
 from app.routes.v1.voting import router as voting_router
@@ -22,3 +23,4 @@ api_router.include_router(objections_router)
 api_router.include_router(voting_router)
 api_router.include_router(action_reviews_router)
 api_router.include_router(collaboration_router)
+api_router.include_router(notifications_router)

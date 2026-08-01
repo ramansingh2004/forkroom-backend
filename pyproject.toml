@@ -20,6 +20,7 @@ dependencies = [
     "redis>=5,<8",
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "uvicorn[standard]>=0.35,<1",
+    "celery>=5.5,<6",
 ]
 
 [dependency-groups]
@@ -57,6 +58,5 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*"]
+module = ["asyncpg.*", "celery.*", "kombu.*"]
 ignore_missing_imports = true
-

@@ -20,6 +20,12 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://forkroom:forkroom@localhost:5432/forkroom"
     redis_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str = "amqp://forkroom:forkroom@localhost:5672//"
+    celery_result_backend: str = "redis://localhost:6379/1"
+    reminder_window_minutes: int = Field(default=60, gt=0, le=1440)
+    notification_max_delivery_attempts: int = Field(default=5, gt=0, le=20)
+    notification_retry_base_seconds: int = Field(default=30, gt=0, le=3600)
+    notification_retry_max_seconds: int = Field(default=3600, gt=0, le=86400)
     cors_origins: list[str] = ["http://localhost:3000"]
 
     jwt_access_secret: str = Field(

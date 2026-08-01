@@ -47,6 +47,20 @@ class EmailService:
             ),
         )
 
+    async def send_notification_email(
+        self,
+        recipient: str,
+        display_name: str,
+        *,
+        subject: str,
+        body: str,
+    ) -> None:
+        await self._send(
+            recipient=recipient,
+            subject=subject,
+            text=f"Hi {display_name},\n\n{body}\n\nOpen ForkRoom to view the details.",
+        )
+
     async def _send(self, recipient: str, subject: str, text: str) -> None:
         message = EmailMessage()
         message["From"] = formataddr(

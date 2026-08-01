@@ -32,11 +32,53 @@ services:
       retries: 10
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: forkroom
+      RABBITMQ_DEFAULT_PASS: forkroom
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - forkroom_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   mailpit:
     image: axllent/mailpit:v1.27
     ports:
       - "1025:1025"
       - "8025:8025"
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@postgres:5432/forkroom
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://forkroom:forkroom@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      FRONTEND_URL: http://localhost:3000
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-development-access-secret-change-me-32}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-development-refresh-secret-change-me-32}
+      JWT_COLLABORATION_SECRET: ${JWT_COLLABORATION_SECRET:-development-collaboration-secret-32}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
 
   collaboration:
@@ -60,6 +102,58 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  worker:
+    build:
+      context: .
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=notifications.email,scheduler",
+      ]
+    environment: &worker-environment
+      DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@postgres:5432/forkroom
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://forkroom:forkroom@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: .
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app:celery_app",
+        "beat",
+        "--loglevel=INFO",
+        "--schedule=/tmp/celerybeat-schedule",
+      ]
+    environment: *worker-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   forkroom_postgres_data:
   forkroom_redis_data:
+  forkroom_rabbitmq_data:
