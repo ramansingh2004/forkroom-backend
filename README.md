@@ -16,8 +16,8 @@ service, and Celery worker processes:
   workers, Beat, and Hocuspocus
 - Ruff, mypy, Pytest, and HTTPX configuration
 
-Search indexing, PDF exports, WebRTC infrastructure, and the production
-observability stack remain later milestones.
+The production observability and Kubernetes delivery stack remain later
+milestones.
 
 Authentication currently includes:
 
@@ -141,6 +141,26 @@ Attachment storage currently includes:
 - short-lived download URLs only after processing succeeds
 - soft-deleted metadata with object removal from MinIO
 
+Immutable exports and search currently include:
+
+- Jinja2 and WeasyPrint decision audit PDFs generated from locked snapshots
+- SHA-256 source verification and content-addressed MinIO storage
+- idempotent export requests with Celery retry and recovery
+- weighted PostgreSQL full-text search with a GIN index
+- ranked, highlighted, workspace-scoped decision results
+
+Live decision meetings currently include:
+
+- short-lived decision-scoped meeting JWTs
+- strict browser-origin and token-scope checks
+- Redis Pub/Sub event fan-out across multiple FastAPI replicas
+- Redis-backed presence, speaking order, facilitator timers, and rate limits
+- targeted SDP offer, SDP answer, and ICE-candidate signaling
+- media-state and durable-vote-status synchronization events
+- a four-participant peer-mesh limit matching the MVP boundary
+- expiring HMAC TURN credentials instead of shared browser passwords
+- a pinned coturn service for local STUN/TURN fallback
+
 Mailpit captures local verification and password-reset messages without sending
 real email. Open http://localhost:8025 after registering or requesting a reset.
 
@@ -148,7 +168,7 @@ real email. Open http://localhost:8025 after registering or requesting a reset.
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
-- Docker Desktop (for PostgreSQL, Redis, RabbitMQ, MinIO, and Mailpit)
+- Docker Desktop (for PostgreSQL, Redis, RabbitMQ, MinIO, coturn, and Mailpit)
 
 ## Local setup
 
@@ -158,7 +178,7 @@ cd forkroom-backend
 
 cp .env.example .env
 uv sync --dev
-docker compose up -d postgres redis rabbitmq minio mailpit
+docker compose up -d postgres redis rabbitmq minio coturn mailpit
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
@@ -183,6 +203,7 @@ Open:
 - RabbitMQ management: http://localhost:15672
 - MinIO API: http://localhost:9000
 - MinIO console: http://localhost:9001
+- TURN/STUN: localhost:3478 (TCP and UDP)
 
 ## Quality checks
 
@@ -231,8 +252,9 @@ docker compose down
 ```
 
 PostgreSQL is exposed on `localhost:5434`, Redis on `localhost:6379`, MinIO on
-`localhost:9000` with its console on `localhost:9001`, Mailpit SMTP on
-`localhost:1025`, and the Mailpit inbox on `localhost:8025`.
+`localhost:9000` with its console on `localhost:9001`, coturn on
+`localhost:3478`, Mailpit SMTP on `localhost:1025`, and the Mailpit inbox on
+`localhost:8025`.
 
 ## First development sequence
 
@@ -250,6 +272,23 @@ PostgreSQL is exposed on `localhost:5434`, Redis on `localhost:6379`, MinIO on
 12. Collaborative editor and Redis presence
 13. RabbitMQ, Celery reminders, and durable notifications
 14. MinIO attachments and asynchronous file processing (this milestone)
+15. Immutable decision PDFs and PostgreSQL full-text search
+16. FastAPI meeting WebSockets, WebRTC signaling, and coturn
+
+## Live meeting flow
+
+1. Call `POST /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/meeting-token`
+   with the normal access token.
+2. Create an `RTCPeerConnection` using the returned `ice_servers`.
+3. Connect to the returned WebSocket URL with `?token=<meeting-token>`.
+4. Exchange `signal.offer`, `signal.answer`, and `signal.ice` events with a
+   `target_user_id`; media itself never passes through FastAPI.
+5. Send `heartbeat` before the configured presence TTL expires.
+
+The WebSocket also accepts `media.state`, `speaker.join`, `speaker.leave`,
+`timer.start`, `timer.cancel`, and `vote.sync`. Only owners and admins can
+control timers or broadcast voting-state changes. Viewers may observe and use
+media signaling but cannot enter the speaking queue.
 
 ## Decision lifecycle
 

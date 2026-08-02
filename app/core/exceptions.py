@@ -244,3 +244,15 @@ class DecisionExportInvalidStateError(Exception):
 
 class SearchAccessDeniedError(Exception):
     """Raised when a user is not a member of the searched workspace."""
+
+
+class MeetingAccessDeniedError(Exception):
+    """Raised when a user cannot enter or control a decision meeting."""
+
+
+class MeetingRoomFullError(Exception):
+    """Raised when the four-participant WebRTC peer-mesh limit is reached."""
+
+
+class MeetingEventInvalidError(ValueError):
+    """Raised when a meeting event violates room workflow rules."""

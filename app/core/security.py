@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -30,6 +33,24 @@ class DecodedToken:
 
 @dataclass(frozen=True, slots=True)
 class CollaborationToken:
+    token: str
+    expires_in: int
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class MeetingTokenClaims:
+    user_id: UUID
+    workspace_id: UUID
+    decision_id: UUID
+    display_name: str
+    role: str
+    can_facilitate: bool
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SignedMeetingToken:
     token: str
     expires_in: int
     expires_at: datetime
@@ -206,3 +227,90 @@ def create_collaboration_token(
         expires_in=int(expires_delta.total_seconds()),
         expires_at=expires_at,
     )
+
+
+def create_meeting_token(
+    *,
+    user_id: UUID,
+    workspace_id: UUID,
+    decision_id: UUID,
+    display_name: str,
+    role: str,
+    can_facilitate: bool,
+) -> SignedMeetingToken:
+    """Create a short-lived token scoped to one decision meeting."""
+    settings = get_settings()
+    now = datetime.now(UTC)
+    lifetime = timedelta(minutes=settings.meeting_token_expire_minutes)
+    expires_at = now + lifetime
+    payload = {
+        "sub": str(user_id),
+        "type": "meeting",
+        "jti": str(uuid4()),
+        "iss": "forkroom-api",
+        "aud": "forkroom-meeting",
+        "workspace_id": str(workspace_id),
+        "decision_id": str(decision_id),
+        "display_name": display_name,
+        "role": role,
+        "can_facilitate": can_facilitate,
+        "iat": now,
+        "exp": expires_at,
+    }
+    return SignedMeetingToken(
+        token=jwt.encode(payload, settings.jwt_collaboration_secret, algorithm=JWT_ALGORITHM),
+        expires_in=int(lifetime.total_seconds()),
+        expires_at=expires_at,
+    )
+
+
+def decode_meeting_token(token: str) -> MeetingTokenClaims:
+    """Validate a decision-scoped meeting token."""
+    settings = get_settings()
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_collaboration_secret,
+            algorithms=[JWT_ALGORITHM],
+            audience="forkroom-meeting",
+            issuer="forkroom-api",
+            options={
+                "require": [
+                    "sub",
+                    "type",
+                    "workspace_id",
+                    "decision_id",
+                    "display_name",
+                    "role",
+                    "can_facilitate",
+                    "iat",
+                    "exp",
+                ]
+            },
+        )
+        if payload["type"] != "meeting":
+            raise jwt.InvalidTokenError
+        return MeetingTokenClaims(
+            user_id=UUID(payload["sub"]),
+            workspace_id=UUID(payload["workspace_id"]),
+            decision_id=UUID(payload["decision_id"]),
+            display_name=str(payload["display_name"]),
+            role=str(payload["role"]),
+            can_facilitate=bool(payload["can_facilitate"]),
+            expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+        )
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError) as error:
+        raise InvalidTokenError from error
+
+
+def create_turn_credentials(user_id: UUID) -> tuple[str, str, int]:
+    """Generate coturn REST credentials without storing per-user TURN passwords."""
+    settings = get_settings()
+    expires_at = int(datetime.now(UTC).timestamp()) + settings.turn_credential_ttl_seconds
+    username = f"{expires_at}:{user_id}"
+    digest = hmac.new(
+        settings.turn_shared_secret.encode(),
+        username.encode(),
+        hashlib.sha1,
+    ).digest()
+    return username, base64.b64encode(digest).decode(), expires_at

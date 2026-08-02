@@ -55,6 +55,22 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = Field(default=7, gt=0)
     collaboration_token_expire_minutes: int = Field(default=5, gt=0, le=15)
     collaboration_url: str = "ws://localhost:1234"
+    meeting_token_expire_minutes: int = Field(default=5, gt=0, le=15)
+    meeting_websocket_url: str = "ws://localhost:8000/api/v1/ws/meetings"
+    meeting_allowed_origins: list[str] = ["http://localhost:3000"]
+    meeting_presence_ttl_seconds: int = Field(default=60, ge=15, le=300)
+    meeting_max_participants: int = Field(default=4, ge=2, le=4)
+    meeting_max_timer_seconds: int = Field(default=7200, ge=60, le=86400)
+    turn_urls: list[str] = [
+        "stun:localhost:3478",
+        "turn:localhost:3478?transport=udp",
+        "turn:localhost:3478?transport=tcp",
+    ]
+    turn_shared_secret: str = Field(
+        default="development-turn-secret-change-me",
+        min_length=16,
+    )
+    turn_credential_ttl_seconds: int = Field(default=3600, ge=300, le=86400)
 
     frontend_url: str = "http://localhost:3000"
     mail_from_address: str = "noreply@forkroom.local"
