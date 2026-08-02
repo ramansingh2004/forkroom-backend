@@ -10,11 +10,16 @@ from app.core.database import async_session_factory
 from app.core.exceptions import AttachmentValidationError
 from app.integrations.email import EmailService
 from app.integrations.object_storage import ObjectStorage
+from app.integrations.pdf_export import DecisionPdfRenderer
 from app.models.attachment import AttachmentStatus
+from app.models.export_search import ExportStatus
 from app.models.notification import Notification
 from app.repositories.attachment import AttachmentRepository
+from app.repositories.decision_lock import DecisionLockRepository
+from app.repositories.export_search import DecisionExportRepository, SearchRepository
 from app.repositories.notification import NotificationRepository
 from app.services.attachment import AttachmentProcessingService
+from app.services.export_search import DecisionExportProcessingService, SearchIndexService
 from app.services.notification import NotificationPublisher, ReminderDiscoveryService
 from app.workers.celery_app import celery_app
 
@@ -160,6 +165,105 @@ async def _recover_attachment_processing() -> int:
 @celery_app.task(name="forkroom.attachments.recover")  # type: ignore[untyped-decorator]
 def recover_attachment_processing() -> int:
     return asyncio.run(_recover_attachment_processing())
+
+
+async def _process_export(export_id: UUID) -> str:
+    async with async_session_factory() as session:
+        service = DecisionExportProcessingService(
+            DecisionExportRepository(session),
+            DecisionLockRepository(session),
+            ObjectStorage(settings),
+            DecisionPdfRenderer(),
+        )
+        return await service.process(export_id)
+
+
+async def _fail_export(export_id: UUID, error: Exception) -> int:
+    async with async_session_factory() as session:
+        repository = DecisionExportRepository(session)
+        export = await repository.get_by_id(export_id)
+        if export is None:
+            return 0
+        if export.status is ExportStatus.PROCESSING:
+            await repository.mark_failed(export, str(error))
+        return export.attempt_count
+
+
+async def _recover_exports() -> int:
+    async with async_session_factory() as session:
+        exports = await DecisionExportRepository(session).list_incomplete()
+    for export in exports:
+        generate_decision_export.apply_async(args=[str(export.id)])
+    return len(exports)
+
+
+@celery_app.task(name="forkroom.exports.recover")  # type: ignore[untyped-decorator]
+def recover_decision_exports() -> int:
+    return asyncio.run(_recover_exports())
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="forkroom.exports.generate",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)  # type: ignore[untyped-decorator]
+def generate_decision_export(self: Task, export_id: str) -> str:
+    parsed_id = UUID(export_id)
+    try:
+        return asyncio.run(_process_export(parsed_id))
+    except Exception as error:
+        attempts = asyncio.run(_fail_export(parsed_id, error))
+        if attempts >= settings.export_processing_max_attempts:
+            raise Reject(str(error), requeue=False) from error
+        retries = int(self.request.retries)
+        countdown = min(
+            settings.notification_retry_base_seconds * (2**retries),
+            settings.notification_retry_max_seconds,
+        )
+        raise self.retry(
+            exc=error,
+            countdown=countdown,
+            max_retries=settings.export_processing_max_attempts - 1,
+        ) from error
+
+
+async def _refresh_search() -> int:
+    async with async_session_factory() as session:
+        decision_ids = await SearchIndexService(SearchRepository(session)).stale()
+    for decision_id in decision_ids:
+        index_decision.apply_async(args=[str(decision_id)])
+    return len(decision_ids)
+
+
+async def _index_decision(decision_id: UUID) -> str:
+    async with async_session_factory() as session:
+        return await SearchIndexService(SearchRepository(session)).index(decision_id)
+
+
+@celery_app.task(name="forkroom.search.refresh")  # type: ignore[untyped-decorator]
+def refresh_search_index() -> int:
+    return asyncio.run(_refresh_search())
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="forkroom.search.index",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)  # type: ignore[untyped-decorator]
+def index_decision(self: Task, decision_id: str) -> str:
+    try:
+        return asyncio.run(_index_decision(UUID(decision_id)))
+    except Exception as error:
+        retries = int(self.request.retries)
+        countdown = min(
+            settings.notification_retry_base_seconds * (2**retries),
+            settings.notification_retry_max_seconds,
+        )
+        raise self.retry(exc=error, countdown=countdown, max_retries=4) from error
 
 
 @celery_app.task(

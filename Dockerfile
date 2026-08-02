@@ -16,6 +16,14 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 FROM base AS runtime
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libharfbuzz-subset0 \
+        libharfbuzz0b \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system forkroom && adduser --system --ingroup forkroom forkroom
 
 COPY --from=dependencies --chown=forkroom:forkroom /app/.venv /app/.venv
@@ -29,4 +37,3 @@ USER forkroom
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

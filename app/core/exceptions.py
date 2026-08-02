@@ -228,3 +228,19 @@ class AttachmentTooLargeError(Exception):
 
 class AttachmentValidationError(ValueError):
     """Raised when a stored object fails permanent file validation."""
+
+
+class DecisionExportNotFoundError(Exception):
+    """Raised when no PDF export exists for the requested decision."""
+
+
+class DecisionExportAccessDeniedError(Exception):
+    """Raised when a workspace role cannot request a PDF export."""
+
+
+class DecisionExportInvalidStateError(Exception):
+    """Raised when an export is unavailable or its immutable source is invalid."""
+
+
+class SearchAccessDeniedError(Exception):
+    """Raised when a user is not a member of the searched workspace."""

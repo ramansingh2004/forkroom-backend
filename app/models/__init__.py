@@ -14,6 +14,10 @@ def import_all_models() -> None:
     from app.models.attachment import Attachment  # noqa: F401
     from app.models.collaboration import CollaborationDocument  # noqa: F401
     from app.models.decision import Decision, DecisionLock  # noqa: F401
+    from app.models.export_search import (  # noqa: F401
+        DecisionExport,
+        DecisionSearchDocument,
+    )
     from app.models.notification import Notification  # noqa: F401
     from app.models.objection import Objection, ObjectionStatusEvent  # noqa: F401
     from app.models.proposal import (  # noqa: F401

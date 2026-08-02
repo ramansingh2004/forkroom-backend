@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     attachment_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
     attachment_url_expire_minutes: int = Field(default=15, gt=0, le=60)
     attachment_processing_max_attempts: int = Field(default=5, gt=0, le=20)
+    export_url_expire_minutes: int = Field(default=15, gt=0, le=60)
+    export_processing_max_attempts: int = Field(default=5, gt=0, le=20)
     cors_origins: list[str] = ["http://localhost:3000"]
 
     jwt_access_secret: str = Field(

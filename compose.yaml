@@ -94,6 +94,8 @@ services:
       MINIO_ACCESS_KEY: forkroom
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-forkroom-development-secret}
       MINIO_BUCKET: forkroom-attachments
+      EXPORT_URL_EXPIRE_MINUTES: ${EXPORT_URL_EXPIRE_MINUTES:-15}
+      EXPORT_PROCESSING_MAX_ATTEMPTS: ${EXPORT_PROCESSING_MAX_ATTEMPTS:-5}
     ports:
       - "8000:8000"
     depends_on:
@@ -138,7 +140,7 @@ services:
         "app.workers.celery_app:celery_app",
         "worker",
         "--loglevel=INFO",
-        "--queues=notifications.email,scheduler,files.process",
+        "--queues=notifications.email,scheduler,files.process,exports.generate,search.index",
       ]
     environment: &worker-environment
       DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@postgres:5432/forkroom
@@ -153,6 +155,7 @@ services:
       MINIO_ACCESS_KEY: forkroom
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-forkroom-development-secret}
       MINIO_BUCKET: forkroom-attachments
+      EXPORT_PROCESSING_MAX_ATTEMPTS: ${EXPORT_PROCESSING_MAX_ATTEMPTS:-5}
     depends_on:
       postgres:
         condition: service_healthy

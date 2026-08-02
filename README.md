@@ -533,4 +533,40 @@ uv run alembic upgrade head
 uv run alembic current
 ```
 
-The expected Alembic head is `c5e7a9b3d6f8`.
+## Decision PDF exports
+
+Members can request a PDF only after a decision is locked. The export record is
+unique per immutable lock, and its MinIO object key includes the lock's SHA-256
+document hash. Repeated requests return the same durable record. The Celery
+worker recomputes and verifies the snapshot hash before rendering, so a modified
+snapshot cannot silently produce a valid-looking audit report.
+
+```text
+POST /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/exports
+GET  /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/exports
+POST /api/v1/workspaces/{workspace_id}/decisions/{decision_id}/exports/download
+```
+
+`pending` and interrupted jobs are recovered by Celery Beat. Temporary failures
+use exponential retry. Exhausted jobs remain `failed` in PostgreSQL and are
+routed to `exports.failed`. Available PDFs use short-lived MinIO download URLs.
+Viewers may read existing exports but cannot start new generation work.
+
+## PostgreSQL full-text search
+
+Celery Beat discovers decisions whose title, proposal content, status, or lock
+snapshot changed after the last index time. Workers build one durable search
+document per decision. PostgreSQL stores a generated weighted `tsvector` and a
+GIN index: titles have weight A, while summaries, proposals, objections, and
+the final lock snapshot have weight B.
+
+```text
+GET /api/v1/workspaces/{workspace_id}/search?q=rabbitmq
+GET /api/v1/workspaces/{workspace_id}/search?q=retry&status=locked&category=architecture
+```
+
+Results are workspace-scoped, permission-checked, ranked, paginated, and include
+`<mark>` highlights produced by `ts_headline`. RabbitMQ queues are
+`search.index` and `search.failed`; PostgreSQL remains the source of truth.
+
+The expected Alembic head is `d6f8a1c4e7b9`.

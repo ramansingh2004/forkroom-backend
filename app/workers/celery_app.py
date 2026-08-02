@@ -7,6 +7,8 @@ settings = get_settings()
 
 notification_exchange = Exchange("notifications", type="direct", durable=True)
 file_exchange = Exchange("files", type="direct", durable=True)
+export_exchange = Exchange("exports", type="direct", durable=True)
+search_exchange = Exchange("search", type="direct", durable=True)
 dead_letter_exchange = Exchange("dead-letter", type="direct", durable=True)
 
 celery_app = Celery(
@@ -64,6 +66,38 @@ celery_app.conf.update(
             routing_key="files.failed",
             durable=True,
         ),
+        Queue(
+            "exports.generate",
+            exchange=export_exchange,
+            routing_key="exports.generate",
+            durable=True,
+            queue_arguments={
+                "x-dead-letter-exchange": "dead-letter",
+                "x-dead-letter-routing-key": "exports.failed",
+            },
+        ),
+        Queue(
+            "exports.failed",
+            exchange=dead_letter_exchange,
+            routing_key="exports.failed",
+            durable=True,
+        ),
+        Queue(
+            "search.index",
+            exchange=search_exchange,
+            routing_key="search.index",
+            durable=True,
+            queue_arguments={
+                "x-dead-letter-exchange": "dead-letter",
+                "x-dead-letter-routing-key": "search.failed",
+            },
+        ),
+        Queue(
+            "search.failed",
+            exchange=dead_letter_exchange,
+            routing_key="search.failed",
+            durable=True,
+        ),
     ),
     task_routes={
         "forkroom.notifications.deliver": {
@@ -77,6 +111,16 @@ celery_app.conf.update(
             "routing_key": "files.process",
         },
         "forkroom.attachments.recover": {"queue": "scheduler"},
+        "forkroom.exports.generate": {
+            "queue": "exports.generate",
+            "routing_key": "exports.generate",
+        },
+        "forkroom.exports.recover": {"queue": "scheduler"},
+        "forkroom.search.index": {
+            "queue": "search.index",
+            "routing_key": "search.index",
+        },
+        "forkroom.search.refresh": {"queue": "scheduler"},
     },
     beat_schedule={
         "discover-due-reminders": {
@@ -90,6 +134,14 @@ celery_app.conf.update(
         "recover-pending-attachment-processing": {
             "task": "forkroom.attachments.recover",
             "schedule": 300.0,
+        },
+        "recover-incomplete-decision-exports": {
+            "task": "forkroom.exports.recover",
+            "schedule": 300.0,
+        },
+        "refresh-decision-search-index": {
+            "task": "forkroom.search.refresh",
+            "schedule": 60.0,
         },
     },
 )

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4; margin: 20mm 17mm 18mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); color: #64748b; font-size: 9px; } }
+    * { box-sizing: border-box; }
+    body { color: #172033; font-family: "DejaVu Sans", sans-serif; font-size: 10.5px; line-height: 1.5; }
+    h1, h2, h3 { color: #0f172a; margin: 0; }
+    h1 { font-size: 25px; line-height: 1.2; margin-top: 10px; }
+    h2 { border-bottom: 2px solid #dbe4f0; font-size: 15px; margin: 24px 0 10px; padding-bottom: 5px; }
+    h3 { font-size: 12px; margin: 14px 0 5px; }
+    p { margin: 5px 0; white-space: pre-wrap; }
+    .brand { color: #5b4ee8; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .subtitle { color: #64748b; margin-top: 7px; }
+    .meta { background: #f4f7fb; border: 1px solid #dbe4f0; border-radius: 7px; margin: 18px 0; padding: 11px 13px; }
+    .meta table { border-collapse: collapse; width: 100%; }
+    .meta td { padding: 3px 0; vertical-align: top; }
+    .meta td:first-child { color: #64748b; width: 32%; }
+    .approved { border-left: 4px solid #5b4ee8; padding-left: 12px; }
+    .card { border: 1px solid #dbe4f0; border-radius: 6px; margin: 8px 0; padding: 9px 11px; page-break-inside: avoid; }
+    .label { color: #64748b; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .pill { background: #eceafd; border-radius: 999px; color: #4338ca; display: inline-block; font-size: 9px; padding: 2px 7px; }
+    .hash { color: #475569; font-family: monospace; font-size: 8px; overflow-wrap: anywhere; }
+    table.data { border-collapse: collapse; width: 100%; }
+    table.data th, table.data td { border-bottom: 1px solid #e2e8f0; padding: 6px; text-align: left; }
+    table.data th { background: #f8fafc; color: #475569; font-size: 9px; text-transform: uppercase; }
+    .footer-note { border-top: 1px solid #dbe4f0; color: #64748b; font-size: 8.5px; margin-top: 28px; padding-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="brand">ForkRoom</div>
+  <h1>{{ decision.title }}</h1>
+  <p class="subtitle">Immutable decision record and audit export</p>
+
+  <div class="meta">
+    <table>
+      <tr><td>Category</td><td>{{ decision.category | replace('_', ' ') | title }}</td></tr>
+      <tr><td>Locked at</td><td>{{ locked_at }}</td></tr>
+      <tr><td>Review date</td><td>{{ decision.review_at or 'Not scheduled' }}</td></tr>
+      <tr><td>Snapshot version</td><td>{{ snapshot_version }}</td></tr>
+      <tr><td>Document hash</td><td class="hash">{{ document_hash }}</td></tr>
+    </table>
+  </div>
+
+  {% if decision.summary %}<h2>Decision summary</h2><p>{{ decision.summary }}</p>{% endif %}
+
+  <h2>Approved proposal</h2>
+  <section class="approved">
+    <h3>{{ approved.title }}</h3>
+    {% if approved.summary %}<p>{{ approved.summary }}</p>{% endif %}
+    {% if approved.content %}<p>{{ approved.content }}</p>{% endif %}
+  </section>
+
+  <h2>Voting outcome</h2>
+  <table class="data">
+    <thead><tr><th>Proposal</th><th>Votes</th><th>Share</th></tr></thead>
+    <tbody>
+      {% for tally in voting.tallies or [] %}
+      <tr><td>{{ tally.proposal_id }}</td><td>{{ tally.votes }}</td><td>{{ '%.1f' | format(tally.percentage) }}%</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Dissent and alternatives</h2>
+  {% for objection in dissent.objections_to_approved_proposal or [] %}
+    <div class="card"><span class="pill">{{ objection.severity }}</span><h3>{{ objection.title }}</h3><p>{{ objection.description }}</p>{% if objection.resolution_note %}<p><strong>Resolution:</strong> {{ objection.resolution_note }}</p>{% endif %}</div>
+  {% else %}<p>No objections were recorded against the approved proposal.</p>{% endfor %}
+
+  {% for alternative in dissent.alternative_proposals or [] %}
+    <div class="card"><div class="label">Alternative proposal</div><h3>{{ alternative.proposal.title }}</h3><p>{{ alternative.proposal.summary or alternative.proposal.content or 'No summary provided.' }}</p><p><strong>Votes:</strong> {{ alternative.votes }} ({{ '%.1f' | format(alternative.percentage) }}%)</p></div>
+  {% endfor %}
+
+  <p class="footer-note">This export was generated from ForkRoom's immutable lock snapshot. Verify the snapshot against the SHA-256 document hash shown above.</p>
+</body>
+</html>

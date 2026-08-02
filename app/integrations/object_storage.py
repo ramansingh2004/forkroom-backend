@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 from dataclasses import dataclass
 from datetime import timedelta
+from io import BytesIO
 from urllib.parse import quote
 
 from minio import Minio
@@ -84,6 +85,20 @@ class ObjectStorage:
             return digest.hexdigest()
 
         return await asyncio.to_thread(calculate)
+
+    async def put_bytes(self, object_key: str, data: bytes, content_type: str) -> None:
+        await self.ensure_bucket()
+
+        def upload() -> None:
+            self._client.put_object(
+                self._bucket,
+                object_key,
+                BytesIO(data),
+                len(data),
+                content_type=content_type,
+            )
+
+        await asyncio.to_thread(upload)
 
     async def remove(self, object_key: str) -> None:
         await asyncio.to_thread(self._client.remove_object, self._bucket, object_key)
