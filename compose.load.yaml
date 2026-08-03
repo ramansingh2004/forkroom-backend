@@ -1,0 +1,14 @@
+services:
+  k6:
+    image: grafana/k6:2.1.0
+    profiles: [load]
+    environment:
+      BASE_URL: http://host.docker.internal:8000
+      ACCESS_TOKEN: ${K6_ACCESS_TOKEN:-}
+      WORKSPACE_ID: ${K6_WORKSPACE_ID:-}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ./load-tests:/scripts:ro
+    entrypoint: ["k6", "run"]
+    command: ["/scripts/health.js"]

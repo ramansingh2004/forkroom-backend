@@ -1,0 +1,52 @@
+services:
+  toxiproxy:
+    image: shopify/toxiproxy:2.12.0
+    ports:
+      - "8474:8474"
+    restart: unless-stopped
+
+  toxiproxy-init:
+    image: curlimages/curl:8.16.0
+    depends_on:
+      - toxiproxy
+      - postgres
+      - redis
+      - rabbitmq
+      - minio
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until curl -fsS http://toxiproxy:8474/version; do sleep 1; done
+        curl -fsS -X POST http://toxiproxy:8474/proxies -H 'Content-Type: application/json' -d '{"name":"postgres","listen":"0.0.0.0:15432","upstream":"postgres:5432"}' || true
+        curl -fsS -X POST http://toxiproxy:8474/proxies -H 'Content-Type: application/json' -d '{"name":"redis","listen":"0.0.0.0:16379","upstream":"redis:6379"}' || true
+        curl -fsS -X POST http://toxiproxy:8474/proxies -H 'Content-Type: application/json' -d '{"name":"rabbitmq","listen":"0.0.0.0:15673","upstream":"rabbitmq:5672"}' || true
+        curl -fsS -X POST http://toxiproxy:8474/proxies -H 'Content-Type: application/json' -d '{"name":"minio","listen":"0.0.0.0:19000","upstream":"minio:9000"}' || true
+
+  api:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@toxiproxy:15432/forkroom
+      REDIS_URL: redis://toxiproxy:16379/0
+      CELERY_BROKER_URL: amqp://forkroom:forkroom@toxiproxy:15673//
+      MINIO_ENDPOINT: toxiproxy:19000
+    depends_on:
+      toxiproxy-init:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@toxiproxy:15432/forkroom
+      REDIS_URL: redis://toxiproxy:16379/0
+      CELERY_BROKER_URL: amqp://forkroom:forkroom@toxiproxy:15673//
+      MINIO_ENDPOINT: toxiproxy:19000
+    depends_on:
+      toxiproxy-init:
+        condition: service_completed_successfully
+
+  beat:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@toxiproxy:15432/forkroom
+      REDIS_URL: redis://toxiproxy:16379/0
+      CELERY_BROKER_URL: amqp://forkroom:forkroom@toxiproxy:15673//
+    depends_on:
+      toxiproxy-init:
+        condition: service_completed_successfully
