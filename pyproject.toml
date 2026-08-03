@@ -63,3 +63,7 @@ exclude = ["alembic/"]
 [[tool.mypy.overrides]]
 module = ["asyncpg.*", "celery.*", "kombu.*", "minio.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["weasyprint", "weasyprint.*"]
+ignore_missing_imports = true
