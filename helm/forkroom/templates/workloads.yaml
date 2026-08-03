@@ -1,0 +1,177 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forkroom.fullname" . }}-api
+  labels:
+    {{- include "forkroom.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          envFrom:
+            - configMapRef: {name: {{ include "forkroom.fullname" . }}-config}
+            - secretRef: {name: {{ include "forkroom.secretName" . }}}
+          ports:
+            - {name: http, containerPort: 8000}
+          readinessProbe:
+            httpGet: {path: /api/v1/health/ready, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/v1/health/live, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "forkroom.fullname" . }}-api
+spec:
+  type: {{ .Values.api.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+      {{- with .Values.api.service.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forkroom.fullname" . }}-collaboration
+  labels:
+    {{- include "forkroom.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collaboration
+spec:
+  replicas: {{ .Values.collaboration.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: collaboration
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: collaboration
+    spec:
+      containers:
+        - name: collaboration
+          image: "{{ .Values.collaboration.image.repository }}:{{ .Values.collaboration.image.tag }}"
+          imagePullPolicy: {{ .Values.collaboration.image.pullPolicy }}
+          envFrom:
+            - secretRef: {name: {{ include "forkroom.secretName" . }}}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "forkroom.secretName" . }}
+                  key: COLLABORATION_DATABASE_URL
+            - {name: COLLABORATION_HOST, value: "0.0.0.0"}
+            - {name: COLLABORATION_PORT, value: "1234"}
+            - {name: COLLABORATION_ALLOWED_ORIGINS, value: {{ .Values.config.frontendUrl | quote }}}
+          ports:
+            - {name: websocket, containerPort: 1234}
+          resources:
+            {{- toYaml .Values.collaboration.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "forkroom.fullname" . }}-collaboration
+spec:
+  type: {{ .Values.collaboration.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: collaboration
+  ports:
+    - name: websocket
+      port: {{ .Values.collaboration.service.port }}
+      targetPort: websocket
+      {{- with .Values.collaboration.service.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forkroom.fullname" . }}-worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: worker}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: worker}
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command: ["celery", "-A", "app.workers.celery_app:celery_app", "worker", "--loglevel=INFO", "--queues=notifications.email,scheduler,files.process,exports.generate,search.index"]
+          envFrom:
+            - configMapRef: {name: {{ include "forkroom.fullname" . }}-config}
+            - secretRef: {name: {{ include "forkroom.secretName" . }}}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "forkroom.fullname" . }}-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: beat}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: beat}
+    spec:
+      containers:
+        - name: beat
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+          envFrom:
+            - configMapRef: {name: {{ include "forkroom.fullname" . }}-config}
+            - secretRef: {name: {{ include "forkroom.secretName" . }}}
+          resources:
+            {{- toYaml .Values.beat.resources | nindent 12 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "forkroom.fullname" . }}-migrate-{{ .Release.Revision }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef: {name: {{ include "forkroom.secretName" . }}}

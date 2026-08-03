@@ -1,0 +1,192 @@
+{{- if .Values.localDependencies.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ include "forkroom.fullname" . }}-postgres}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: {{ include "forkroom.fullname" . }}-postgres}}
+  template:
+    metadata: {labels: {app: {{ include "forkroom.fullname" . }}-postgres}}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.localDependencies.postgresImage }}
+          env:
+            - {name: POSTGRES_DB, value: forkroom}
+            - {name: POSTGRES_USER, value: forkroom}
+            - {name: POSTGRES_PASSWORD, value: forkroom}
+          ports: [{name: postgres, containerPort: 5432}]
+          readinessProbe:
+            exec: {command: ["pg_isready", "-U", "forkroom", "-d", "forkroom"]}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+      volumes: [{name: data, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ include "forkroom.fullname" . }}-postgres}
+spec:
+  selector: {app: {{ include "forkroom.fullname" . }}-postgres}
+  ports: [{name: postgres, port: 5432, targetPort: postgres}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ include "forkroom.fullname" . }}-redis}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: {{ include "forkroom.fullname" . }}-redis}}
+  template:
+    metadata: {labels: {app: {{ include "forkroom.fullname" . }}-redis}}
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.localDependencies.redisImage }}
+          command: ["redis-server", "--appendonly", "yes"]
+          ports: [{name: redis, containerPort: 6379}]
+          readinessProbe:
+            exec: {command: ["redis-cli", "ping"]}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ include "forkroom.fullname" . }}-redis}
+spec:
+  selector: {app: {{ include "forkroom.fullname" . }}-redis}
+  ports: [{name: redis, port: 6379, targetPort: redis}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ include "forkroom.fullname" . }}-rabbitmq}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: {{ include "forkroom.fullname" . }}-rabbitmq}}
+  template:
+    metadata: {labels: {app: {{ include "forkroom.fullname" . }}-rabbitmq}}
+    spec:
+      containers:
+        - name: rabbitmq
+          image: {{ .Values.localDependencies.rabbitmqImage }}
+          env:
+            - {name: RABBITMQ_DEFAULT_USER, value: forkroom}
+            - {name: RABBITMQ_DEFAULT_PASS, value: forkroom}
+          ports:
+            - {name: amqp, containerPort: 5672}
+            - {name: management, containerPort: 15672}
+          readinessProbe:
+            exec: {command: ["rabbitmq-diagnostics", "-q", "ping"]}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ include "forkroom.fullname" . }}-rabbitmq}
+spec:
+  selector: {app: {{ include "forkroom.fullname" . }}-rabbitmq}
+  ports:
+    - {name: amqp, port: 5672, targetPort: amqp}
+    - {name: management, port: 15672, targetPort: management}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ include "forkroom.fullname" . }}-minio}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: {{ include "forkroom.fullname" . }}-minio}}
+  template:
+    metadata: {labels: {app: {{ include "forkroom.fullname" . }}-minio}}
+    spec:
+      containers:
+        - name: minio
+          image: {{ .Values.localDependencies.minioImage }}
+          command: ["minio", "server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: {secretKeyRef: {name: {{ include "forkroom.secretName" . }}, key: MINIO_ACCESS_KEY}}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: {{ include "forkroom.secretName" . }}, key: MINIO_SECRET_KEY}}
+          ports:
+            - {name: api, containerPort: 9000}
+            - {name: console, containerPort: 9001}
+          readinessProbe:
+            httpGet: {path: /minio/health/ready, port: api}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ include "forkroom.fullname" . }}-minio}
+spec:
+  selector: {app: {{ include "forkroom.fullname" . }}-minio}
+  ports:
+    - {name: api, port: 9000, targetPort: api}
+    - {name: console, port: 9001, targetPort: console}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ include "forkroom.fullname" . }}-mailpit}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: {{ include "forkroom.fullname" . }}-mailpit}}
+  template:
+    metadata: {labels: {app: {{ include "forkroom.fullname" . }}-mailpit}}
+    spec:
+      containers:
+        - name: mailpit
+          image: {{ .Values.localDependencies.mailpitImage }}
+          ports:
+            - {name: smtp, containerPort: 1025}
+            - {name: ui, containerPort: 8025}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mailpit}
+spec:
+  selector: {app: {{ include "forkroom.fullname" . }}-mailpit}
+  ports:
+    - {name: smtp, port: 1025, targetPort: smtp}
+    - {name: ui, port: 8025, targetPort: ui}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ include "forkroom.fullname" . }}-coturn}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: {{ include "forkroom.fullname" . }}-coturn}}
+  template:
+    metadata: {labels: {app: {{ include "forkroom.fullname" . }}-coturn}}
+    spec:
+      containers:
+        - name: coturn
+          image: {{ .Values.localDependencies.coturnImage }}
+          args:
+            - --log-file=stdout
+            - --fingerprint
+            - --use-auth-secret
+            - --static-auth-secret=$(TURN_SHARED_SECRET)
+            - --realm=forkroom.local
+            - --listening-port=3478
+            - --min-port=49160
+            - --max-port=49160
+            - --no-cli
+            - --no-tls
+            - --no-dtls
+          env:
+            - name: TURN_SHARED_SECRET
+              valueFrom: {secretKeyRef: {name: {{ include "forkroom.secretName" . }}, key: TURN_SHARED_SECRET}}
+          ports:
+            - {name: turn-tcp, containerPort: 3478, protocol: TCP}
+            - {name: turn-udp, containerPort: 3478, protocol: UDP}
+            - {name: relay-udp, containerPort: 49160, protocol: UDP}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ include "forkroom.fullname" . }}-coturn}
+spec:
+  selector: {app: {{ include "forkroom.fullname" . }}-coturn}
+  ports:
+    - {name: turn-tcp, port: 3478, targetPort: turn-tcp, protocol: TCP}
+    - {name: turn-udp, port: 3478, targetPort: turn-udp, protocol: UDP}
+    - {name: relay-udp, port: 49160, targetPort: relay-udp, protocol: UDP}
+{{- end }}

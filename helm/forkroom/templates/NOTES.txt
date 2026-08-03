@@ -1,0 +1,11 @@
+ForkRoom has been installed in namespace {{ .Release.Namespace }}.
+
+API service:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "forkroom.fullname" . }}-api 8000:{{ .Values.api.service.port }}
+
+Collaboration WebSocket:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "forkroom.fullname" . }}-collaboration 1234:{{ .Values.collaboration.service.port }}
+
+Check status:
+  kubectl get pods -n {{ .Release.Namespace }}
+  kubectl logs -n {{ .Release.Namespace }} deployment/{{ include "forkroom.fullname" . }}-api

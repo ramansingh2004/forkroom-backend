@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "forkroom.fullname" . }}-config
+  labels:
+    {{- include "forkroom.labels" . | nindent 4 }}
+data:
+  APP_ENV: {{ .Values.config.appEnv | quote }}
+  FRONTEND_URL: {{ .Values.config.frontendUrl | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  MEETING_ALLOWED_ORIGINS: {{ .Values.config.meetingAllowedOrigins | quote }}
+  MEETING_WEBSOCKET_URL: {{ .Values.config.meetingWebsocketUrl | quote }}
+  COLLABORATION_URL: {{ .Values.config.collaborationUrl | quote }}
+  TURN_URLS: {{ .Values.config.turnUrls | quote }}
+  {{- with .Values.config.otelEndpoint }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ . | quote }}
+  {{- end }}
+  MINIO_ENDPOINT: {{ .Values.config.minioEndpoint | quote }}
+  MINIO_PUBLIC_ENDPOINT: {{ .Values.config.minioPublicEndpoint | quote }}
+  MINIO_SECURE: {{ .Values.config.minioSecure | quote }}
+  MINIO_BUCKET: forkroom-attachments
+  SMTP_HOST: {{ .Values.config.smtpHost | quote }}
+  SMTP_PORT: {{ .Values.config.smtpPort | quote }}
+---
+{{- if .Values.secrets.create }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "forkroom.fullname" . }}-secrets
+  labels:
+    {{- include "forkroom.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  DATABASE_URL: {{ required "secrets.databaseUrl is required" .Values.secrets.databaseUrl | quote }}
+  COLLABORATION_DATABASE_URL: {{ required "secrets.collaborationDatabaseUrl is required" .Values.secrets.collaborationDatabaseUrl | quote }}
+  REDIS_URL: {{ required "secrets.redisUrl is required" .Values.secrets.redisUrl | quote }}
+  CELERY_BROKER_URL: {{ required "secrets.celeryBrokerUrl is required" .Values.secrets.celeryBrokerUrl | quote }}
+  CELERY_RESULT_BACKEND: {{ required "secrets.celeryResultBackend is required" .Values.secrets.celeryResultBackend | quote }}
+  JWT_ACCESS_SECRET: {{ required "secrets.jwtAccessSecret is required" .Values.secrets.jwtAccessSecret | quote }}
+  JWT_REFRESH_SECRET: {{ required "secrets.jwtRefreshSecret is required" .Values.secrets.jwtRefreshSecret | quote }}
+  JWT_COLLABORATION_SECRET: {{ required "secrets.jwtCollaborationSecret is required" .Values.secrets.jwtCollaborationSecret | quote }}
+  MINIO_ACCESS_KEY: {{ required "secrets.minioAccessKey is required" .Values.secrets.minioAccessKey | quote }}
+  MINIO_SECRET_KEY: {{ required "secrets.minioSecretKey is required" .Values.secrets.minioSecretKey | quote }}
+  TURN_SHARED_SECRET: {{ required "secrets.turnSharedSecret is required" .Values.secrets.turnSharedSecret | quote }}
+{{- end }}

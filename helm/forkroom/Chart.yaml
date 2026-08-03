@@ -1,0 +1,6 @@
+apiVersion: v2
+name: forkroom
+description: ForkRoom API, collaboration service, workers, and local dependencies
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

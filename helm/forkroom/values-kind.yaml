@@ -1,0 +1,56 @@
+fullnameOverride: forkroom
+
+api:
+  replicaCount: 1
+  image:
+    repository: forkroom-api
+    tag: dev
+    pullPolicy: Never
+  service:
+    type: NodePort
+    nodePort: 30080
+
+collaboration:
+  replicaCount: 1
+  image:
+    repository: forkroom-collaboration
+    tag: dev
+    pullPolicy: Never
+  service:
+    type: NodePort
+    nodePort: 30123
+
+worker:
+  replicaCount: 1
+
+config:
+  appEnv: development
+  frontendUrl: http://localhost:3000
+  corsOrigins: '["http://localhost:3000"]'
+  meetingAllowedOrigins: '["http://localhost:3000"]'
+  meetingWebsocketUrl: ws://localhost:8000/api/v1/ws/meetings
+  collaborationUrl: ws://localhost:1234
+  turnUrls: '["stun:localhost:3478","turn:localhost:3478?transport=udp","turn:localhost:3478?transport=tcp"]'
+  minioEndpoint: forkroom-minio:9000
+  minioPublicEndpoint: localhost:9000
+  minioSecure: "false"
+  smtpHost: mailpit
+  smtpPort: "1025"
+
+secrets:
+  create: true
+  existingSecret: ""
+  databaseUrl: postgresql+asyncpg://forkroom:forkroom@forkroom-postgres:5432/forkroom
+  collaborationDatabaseUrl: postgresql://forkroom:forkroom@forkroom-postgres:5432/forkroom
+  redisUrl: redis://forkroom-redis:6379/0
+  celeryBrokerUrl: amqp://forkroom:forkroom@forkroom-rabbitmq:5672//
+  celeryResultBackend: redis://forkroom-redis:6379/1
+  jwtAccessSecret: development-access-secret-change-me-32
+  jwtRefreshSecret: development-refresh-secret-change-me-32
+  jwtCollaborationSecret: development-collaboration-secret-32
+  minioAccessKey: forkroom
+  minioSecretKey: forkroom-development-secret
+  turnSharedSecret: development-turn-secret-change-me
+
+localDependencies:
+  enabled: true

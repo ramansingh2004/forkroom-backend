@@ -1,0 +1,93 @@
+nameOverride: ""
+fullnameOverride: ""
+
+api:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/your-github-username/forkroom-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+    nodePort: null
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+collaboration:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/your-github-username/forkroom-collaboration
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 1234
+    nodePort: null
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+
+worker:
+  replicaCount: 2
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 750m, memory: 768Mi}
+
+beat:
+  resources:
+    requests: {cpu: 25m, memory: 128Mi}
+    limits: {cpu: 200m, memory: 256Mi}
+
+config:
+  appEnv: production
+  frontendUrl: https://forkroom.example
+  corsOrigins: '["https://forkroom.example"]'
+  meetingAllowedOrigins: '["https://forkroom.example"]'
+  meetingWebsocketUrl: wss://api.forkroom.example/api/v1/ws/meetings
+  collaborationUrl: wss://collaboration.forkroom.example
+  turnUrls: '["stun:turn.forkroom.example:3478","turn:turn.forkroom.example:3478?transport=udp","turns:turn.forkroom.example:5349?transport=tcp"]'
+  otelEndpoint: ""
+  minioEndpoint: minio.example:9000
+  minioPublicEndpoint: files.forkroom.example
+  minioSecure: "true"
+  smtpHost: smtp.example
+  smtpPort: "587"
+
+secrets:
+  create: false
+  existingSecret: forkroom-secrets
+  databaseUrl: ""
+  collaborationDatabaseUrl: ""
+  redisUrl: ""
+  celeryBrokerUrl: ""
+  celeryResultBackend: ""
+  jwtAccessSecret: ""
+  jwtRefreshSecret: ""
+  jwtCollaborationSecret: ""
+  minioAccessKey: ""
+  minioSecretKey: ""
+  turnSharedSecret: ""
+
+ingress:
+  enabled: false
+  className: nginx
+  apiHost: api.forkroom.example
+  collaborationHost: collaboration.forkroom.example
+  tlsSecretName: forkroom-tls
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+localDependencies:
+  enabled: false
+  postgresImage: postgres:17-alpine
+  redisImage: redis:7.4-alpine
+  rabbitmqImage: rabbitmq:4.1-management-alpine
+  minioImage: minio/minio:RELEASE.2025-09-07T16-13-09Z
+  coturnImage: coturn/coturn:4.16.0-alpine3.24
+  mailpitImage: axllent/mailpit:v1.27
