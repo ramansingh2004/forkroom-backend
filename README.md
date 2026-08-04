@@ -609,3 +609,22 @@ Results are workspace-scoped, permission-checked, ranked, paginated, and include
 `search.index` and `search.failed`; PostgreSQL remains the source of truth.
 
 The expected Alembic head is `d6f8a1c4e7b9`.
+
+## Delivery, Kubernetes, observability, and resilience
+
+The repository now includes:
+
+- GitHub Actions for Python, TypeScript, container builds, GHCR publishing,
+  CodeQL, and Trivy
+- Dependabot configuration for Python, npm, Docker, and GitHub Actions
+- A Helm chart for the API, collaboration service, worker, Beat, migrations,
+  ingress, and optional autoscaling
+- A disposable Kind profile with local PostgreSQL, Redis, RabbitMQ, MinIO,
+  Mailpit, and coturn
+- OpenTelemetry instrumentation for FastAPI, SQLAlchemy, Redis, and Celery
+- A local Prometheus, Grafana, Loki, Tempo, and OpenTelemetry Collector stack
+- k6 health and authenticated workspace load tests
+- Toxiproxy database, cache, broker, and object-storage fault injection
+
+The exact setup commands, required secrets, local URLs, and production
+configuration checklist are in [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
