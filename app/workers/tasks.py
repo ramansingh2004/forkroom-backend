@@ -6,7 +6,6 @@ from celery import Task
 from celery.exceptions import Reject
 
 from app.core.config import get_settings
-from app.core.database import async_session_factory
 from app.core.exceptions import AttachmentValidationError
 from app.integrations.email import EmailService
 from app.integrations.object_storage import ObjectStorage
@@ -22,6 +21,7 @@ from app.services.attachment import AttachmentProcessingService
 from app.services.export_search import DecisionExportProcessingService, SearchIndexService
 from app.services.notification import NotificationPublisher, ReminderDiscoveryService
 from app.workers.celery_app import celery_app
+from app.workers.database import WorkerSessionFactory
 
 settings = get_settings()
 
@@ -32,7 +32,7 @@ class CeleryNotificationPublisher(NotificationPublisher):
 
 
 async def _discover_reminders() -> int:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         service = ReminderDiscoveryService(
             NotificationRepository(session),
             CeleryNotificationPublisher(),
@@ -43,7 +43,7 @@ async def _discover_reminders() -> int:
 
 
 async def _recover_stale_deliveries() -> int:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         service = ReminderDiscoveryService(
             NotificationRepository(session),
             CeleryNotificationPublisher(),
@@ -54,7 +54,7 @@ async def _recover_stale_deliveries() -> int:
 
 
 async def _claim(notification_id: UUID) -> tuple[Notification, str, str] | None:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         repository = NotificationRepository(session)
         notification = await repository.claim_for_delivery(notification_id, datetime.now(UTC))
         if notification is None:
@@ -81,7 +81,7 @@ async def _send_and_mark_delivered(
         subject=notification.title,
         body=notification.body,
     )
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         repository = NotificationRepository(session)
         current = await repository.get_for_recipient(notification.id, notification.recipient_id)
         if current is not None:
@@ -93,7 +93,7 @@ async def _record_retry(
     error: Exception,
     countdown: int,
 ) -> bool:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         repository = NotificationRepository(session)
         current = await repository.get_for_recipient(notification.id, notification.recipient_id)
         if current is None:
@@ -124,7 +124,7 @@ def recover_stale_notification_deliveries() -> int:
 
 
 async def _process_attachment(attachment_id: UUID) -> str:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         service = AttachmentProcessingService(
             AttachmentRepository(session),
             ObjectStorage(settings),
@@ -134,7 +134,7 @@ async def _process_attachment(attachment_id: UUID) -> str:
 
 
 async def _reject_attachment(attachment_id: UUID, error: Exception) -> None:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         repository = AttachmentRepository(session)
         attachment = await repository.get_by_id(attachment_id)
         if attachment is not None and attachment.status is AttachmentStatus.PROCESSING:
@@ -146,7 +146,7 @@ async def _reject_attachment(attachment_id: UUID, error: Exception) -> None:
 
 
 async def _attachment_attempt_limit_reached(attachment_id: UUID) -> bool:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         attachment = await AttachmentRepository(session).get_by_id(attachment_id)
         return bool(
             attachment is not None
@@ -155,7 +155,7 @@ async def _attachment_attempt_limit_reached(attachment_id: UUID) -> bool:
 
 
 async def _recover_attachment_processing() -> int:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         attachments = await AttachmentRepository(session).list_processing()
     for attachment in attachments:
         process_attachment.apply_async(args=[str(attachment.id)])
@@ -168,7 +168,7 @@ def recover_attachment_processing() -> int:
 
 
 async def _process_export(export_id: UUID) -> str:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         service = DecisionExportProcessingService(
             DecisionExportRepository(session),
             DecisionLockRepository(session),
@@ -179,7 +179,7 @@ async def _process_export(export_id: UUID) -> str:
 
 
 async def _fail_export(export_id: UUID, error: Exception) -> int:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         repository = DecisionExportRepository(session)
         export = await repository.get_by_id(export_id)
         if export is None:
@@ -190,7 +190,7 @@ async def _fail_export(export_id: UUID, error: Exception) -> int:
 
 
 async def _recover_exports() -> int:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         exports = await DecisionExportRepository(session).list_incomplete()
     for export in exports:
         generate_decision_export.apply_async(args=[str(export.id)])
@@ -230,7 +230,7 @@ def generate_decision_export(self: Task, export_id: str) -> str:
 
 
 async def _refresh_search() -> int:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         decision_ids = await SearchIndexService(SearchRepository(session)).stale()
     for decision_id in decision_ids:
         index_decision.apply_async(args=[str(decision_id)])
@@ -238,7 +238,7 @@ async def _refresh_search() -> int:
 
 
 async def _index_decision(decision_id: UUID) -> str:
-    async with async_session_factory() as session:
+    async with WorkerSessionFactory() as session:
         return await SearchIndexService(SearchRepository(session)).index(decision_id)
 
 
