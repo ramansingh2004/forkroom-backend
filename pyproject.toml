@@ -24,6 +24,13 @@ dependencies = [
     "minio>=7.2,<8",
     "jinja2>=3.1,<4",
     "weasyprint>=69,<70",
+    "opentelemetry-api>=1.30,<2",
+    "opentelemetry-sdk>=1.30,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.30,<2",
+    "opentelemetry-instrumentation-fastapi>=0.51b0,<1",
+    "opentelemetry-instrumentation-sqlalchemy>=0.51b0,<1",
+    "opentelemetry-instrumentation-redis>=0.51b0,<1",
+    "opentelemetry-instrumentation-celery>=0.51b0,<1",
 ]
 
 [dependency-groups]
@@ -61,7 +68,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["alembic/"]
 
 [[tool.mypy.overrides]]
-module = ["asyncpg.*", "celery.*", "kombu.*", "minio.*"]
+module = ["asyncpg.*", "celery.*", "kombu.*", "minio.*", "weasyprint.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

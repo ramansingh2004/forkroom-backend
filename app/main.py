@@ -7,12 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import dispose_database
 from app.core.redis import close_redis
+from app.observability import configure_observability, shutdown_observability
 from app.routes.router import api_router
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     yield
+    shutdown_observability()
     await close_redis()
     await dispose_database()
 
@@ -34,6 +36,7 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
     application.include_router(api_router, prefix=settings.api_v1_prefix)
+    configure_observability(application, settings)
 
     @application.get("/", tags=["Meta"], include_in_schema=False)
     async def root() -> dict[str, str]:

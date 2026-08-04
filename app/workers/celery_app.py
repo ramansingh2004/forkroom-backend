@@ -2,6 +2,7 @@ from celery import Celery
 from kombu import Exchange, Queue
 
 from app.core.config import get_settings
+from app.observability import configure_celery_observability
 
 settings = get_settings()
 
@@ -17,6 +18,7 @@ celery_app = Celery(
     backend=settings.celery_result_backend,
     include=["app.workers.tasks"],
 )
+configure_celery_observability(settings)
 celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     task_serializer="json",

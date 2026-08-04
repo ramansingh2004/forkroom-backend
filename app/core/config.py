@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     export_processing_max_attempts: int = Field(default=5, gt=0, le=20)
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_service_name: str = "forkroom-api"
+    otel_trace_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+
     jwt_access_secret: str = Field(
         default="development-access-secret-change-me-32",
         min_length=32,
