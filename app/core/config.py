@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     attachment_processing_max_attempts: int = Field(default=5, gt=0, le=20)
     export_url_expire_minutes: int = Field(default=15, gt=0, le=60)
     export_processing_max_attempts: int = Field(default=5, gt=0, le=20)
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000",]
 
     otel_exporter_otlp_endpoint: str | None = None
     otel_service_name: str = "forkroom-api"
