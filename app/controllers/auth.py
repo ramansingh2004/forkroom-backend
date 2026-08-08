@@ -8,21 +8,20 @@ from app.core.exceptions import (
     InvalidCredentialsError,
     InvalidTokenError,
 )
+from app.core.security import TokenPair
 from app.schemas.auth import (
     ActionTokenRequest,
     EmailVerificationRequest,
     ForgotPasswordRequest,
     LoginRequest,
-    LoginResponse,
     LogoutRequest,
     MessageResponse,
     RefreshRequest,
     RegisterRequest,
     ResetPasswordRequest,
-    TokenResponse,
     UserResponse,
 )
-from app.services.auth import AuthService
+from app.services.auth import AuthService, LoginResult
 
 
 async def register_user(
@@ -43,7 +42,7 @@ async def register_user(
 async def login_user(
     payload: LoginRequest,
     service: AuthService,
-) -> LoginResponse:
+) -> LoginResult:
     try:
         result = await service.login(payload)
     except InvalidCredentialsError as error:
@@ -63,18 +62,13 @@ async def login_user(
             detail="Verify your email before logging in",
         ) from error
 
-    return LoginResponse(
-        user=UserResponse.model_validate(result.user),
-        access_token=(result.tokens.access_token),
-        refresh_token=(result.tokens.refresh_token),
-        expires_in=(result.tokens.access_token_expires_in),
-    )
+    return result
 
 
 async def refresh_tokens(
     payload: RefreshRequest,
     service: AuthService,
-) -> TokenResponse:
+) -> TokenPair:
     try:
         tokens = await service.refresh(payload)
     except InvalidTokenError as error:
@@ -89,11 +83,7 @@ async def refresh_tokens(
             detail="This account is inactive",
         ) from error
 
-    return TokenResponse(
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
-        expires_in=(tokens.access_token_expires_in),
-    )
+    return tokens
 
 
 async def logout_user(

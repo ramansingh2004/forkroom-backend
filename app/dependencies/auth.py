@@ -6,10 +6,6 @@ from fastapi import (
     Request,
     status,
 )
-from fastapi.security import (
-    HTTPAuthorizationCredentials,
-    HTTPBearer,
-)
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,8 +25,6 @@ from app.repositories.refresh_token import (
 )
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService
-
-bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_auth_service(
@@ -97,10 +91,7 @@ async def enforce_auth_rate_limit(
 
 
 async def get_current_user(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Depends(bearer_scheme),
-    ],
+    request: Request,
     session: Annotated[
         AsyncSession,
         Depends(get_db_session),
@@ -113,14 +104,14 @@ async def get_current_user(
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=("Invalid or expired access token"),
-        headers={"WWW-Authenticate": "Bearer"},
     )
 
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    access_token = request.cookies.get("forkroom_access")
+    if not access_token:
         raise unauthorized
 
     try:
-        decoded = decode_access_token(credentials.credentials)
+        decoded = decode_access_token(access_token)
     except InvalidTokenError as error:
         raise unauthorized from error
 

@@ -108,7 +108,7 @@ async def test_register_validates_request(client: AsyncClient, auth_service: Asy
     auth_service.register.assert_not_awaited()
 
 
-async def test_login_returns_user_and_tokens(
+async def test_login_returns_user_and_sets_auth_cookies(
     client: AsyncClient,
     auth_service: AsyncMock,
 ) -> None:
@@ -147,13 +147,58 @@ async def test_login_returns_user_and_tokens(
             "is_active": True,
             "is_email_verified": False,
             "created_at": "2026-07-27T00:00:00Z",
-        },
-        "access_token": "access-token",
-        "refresh_token": "refresh-token",
-        "token_type": "bearer",
-        "expires_in": 900,
+        }
     }
+    assert "access_token" not in response.text
+    assert "refresh_token" not in response.text
     assert "not-returned" not in response.text
+    set_cookies = response.headers.get_list("set-cookie")
+    assert any(
+        "forkroom_access=access-token" in cookie and "HttpOnly" in cookie for cookie in set_cookies
+    )
+    assert any(
+        "forkroom_refresh=refresh-token" in cookie and "HttpOnly" in cookie
+        for cookie in set_cookies
+    )
+
+
+async def test_refresh_rotates_tokens_from_cookie(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    auth_service.refresh.return_value = TokenPair(
+        access_token="new-access-token",
+        refresh_token="new-refresh-token",
+        access_token_expires_in=900,
+    )
+    client.cookies.set(
+        "forkroom_refresh",
+        "old-refresh-token",
+        path="/api/v1/auth",
+    )
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    refresh_request = auth_service.refresh.await_args.args[0]
+    assert refresh_request.refresh_token == "old-refresh-token"
+    set_cookies = response.headers.get_list("set-cookie")
+    assert any("forkroom_access=new-access-token" in cookie for cookie in set_cookies)
+    assert any("forkroom_refresh=new-refresh-token" in cookie for cookie in set_cookies)
+
+
+async def test_refresh_requires_refresh_cookie(
+    client: AsyncClient,
+    auth_service: AsyncMock,
+) -> None:
+    client.cookies.clear()
+
+    response = await client.post("/api/v1/auth/refresh")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Missing refresh token"}
+    auth_service.refresh.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -186,14 +231,23 @@ async def test_logout_revokes_session(
     client: AsyncClient,
     auth_service: AsyncMock,
 ) -> None:
-    response = await client.post(
-        "/api/v1/auth/logout",
-        json={"refresh_token": ("valid-refresh-token")},
+    client.cookies.set("forkroom_access", "access-token", path="/")
+    client.cookies.set(
+        "forkroom_refresh",
+        "valid-refresh-token",
+        path="/api/v1/auth",
     )
+
+    response = await client.post("/api/v1/auth/logout")
 
     assert response.status_code == 204
     assert response.content == b""
     auth_service.logout.assert_awaited_once()
+    logout_request = auth_service.logout.await_args.args[0]
+    assert logout_request.refresh_token == "valid-refresh-token"
+    set_cookies = response.headers.get_list("set-cookie")
+    assert any("forkroom_access=" in cookie and "Max-Age=0" in cookie for cookie in set_cookies)
+    assert any("forkroom_refresh=" in cookie and "Max-Age=0" in cookie for cookie in set_cookies)
 
 
 async def test_logout_rejects_invalid_refresh_token(
@@ -201,14 +255,18 @@ async def test_logout_rejects_invalid_refresh_token(
     auth_service: AsyncMock,
 ) -> None:
     auth_service.logout.side_effect = InvalidTokenError
-
-    response = await client.post(
-        "/api/v1/auth/logout",
-        json={"refresh_token": ("invalid-refresh-token")},
+    client.cookies.set(
+        "forkroom_refresh",
+        "invalid-refresh-token",
+        path="/api/v1/auth",
     )
 
-    assert response.status_code == 401
-    assert response.json() == {"detail": ("Invalid or expired refresh token")}
+    response = await client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    set_cookies = response.headers.get_list("set-cookie")
+    assert any("forkroom_refresh=" in cookie and "Max-Age=0" in cookie for cookie in set_cookies)
 
 
 async def test_request_email_verification_uses_generic_response(

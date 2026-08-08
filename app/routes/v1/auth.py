@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.controllers.auth import (
     forgot_password,
@@ -12,6 +12,7 @@ from app.controllers.auth import (
     reset_password,
     verify_email,
 )
+from app.core.config import get_settings
 from app.dependencies.auth import (
     enforce_auth_rate_limit,
     get_auth_service,
@@ -29,10 +30,55 @@ from app.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     ResetPasswordRequest,
-    TokenResponse,
     UserResponse,
 )
 from app.services.auth import AuthService
+
+ACCESS_COOKIE = "forkroom_access"
+REFRESH_COOKIE = "forkroom_refresh"
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    settings = get_settings()
+    secure = settings.app_env in {"staging", "production"}
+    response.set_cookie(
+        key=ACCESS_COOKIE,
+        value=access_token,
+        max_age=settings.access_token_expire_minutes * 60,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=refresh_token,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/api/v1/auth",
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    settings = get_settings()
+    secure = settings.app_env in {"staging", "production"}
+    response.delete_cookie(
+        ACCESS_COOKIE,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+    response.delete_cookie(
+        REFRESH_COOKIE,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/api/v1/auth",
+    )
+
 
 router = APIRouter(
     prefix="/auth",
@@ -68,34 +114,50 @@ async def register(
 )
 async def login(
     payload: LoginRequest,
+    response: Response,
     service: Annotated[
         AuthService,
         Depends(get_auth_service),
     ],
 ) -> LoginResponse:
-    return await login_user(
+    result = await login_user(
         payload,
         service,
     )
+    _set_auth_cookies(
+        response,
+        result.tokens.access_token,
+        result.tokens.refresh_token,
+    )
+    return LoginResponse(user=UserResponse.model_validate(result.user))
 
 
 @router.post(
     "/refresh",
-    response_model=TokenResponse,
+    status_code=status.HTTP_204_NO_CONTENT,
     summary=("Rotate an authentication token pair"),
     dependencies=[Depends(enforce_auth_rate_limit)],
 )
 async def refresh(
-    payload: RefreshRequest,
+    request: Request,
+    response: Response,
     service: Annotated[
         AuthService,
         Depends(get_auth_service),
     ],
-) -> TokenResponse:
-    return await refresh_tokens(
-        payload,
+) -> None:
+    refresh_token = request.cookies.get(REFRESH_COOKIE)
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh token",
+        )
+
+    tokens = await refresh_tokens(
+        RefreshRequest(refresh_token=refresh_token),
         service,
     )
+    _set_auth_cookies(response, tokens.access_token, tokens.refresh_token)
 
 
 @router.post(
@@ -105,16 +167,26 @@ async def refresh(
     dependencies=[Depends(enforce_auth_rate_limit)],
 )
 async def logout(
-    payload: LogoutRequest,
+    request: Request,
+    response: Response,
     service: Annotated[
         AuthService,
         Depends(get_auth_service),
     ],
 ) -> None:
-    await logout_user(
-        payload,
-        service,
-    )
+    refresh_token = request.cookies.get(REFRESH_COOKIE)
+    try:
+        if refresh_token:
+            try:
+                await logout_user(
+                    LogoutRequest(refresh_token=refresh_token),
+                    service,
+                )
+            except HTTPException as error:
+                if error.status_code != status.HTTP_401_UNAUTHORIZED:
+                    raise
+    finally:
+        _clear_auth_cookies(response)
 
 
 @router.get(
