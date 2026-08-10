@@ -11,19 +11,19 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@hocuspocus/extension-redis": "^4.4.0",
-    "@hocuspocus/server": "4.4.0",
-    "jose": "6.2.4",
+    "@hocuspocus/extension-redis": "^4.5.0",
+    "@hocuspocus/server": "4.5.0",
+    "jose": "6.2.8",
     "pg": "8.22.0",
     "pino": "10.3.1",
-    "redis": "6.1.0",
-    "yjs": "13.6.31"
+    "redis": "6.2.0",
+    "yjs": "13.6.32"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "@types/pg": "^8.15.0",
-    "tsx": "^4.20.0",
-    "typescript": "^5.9.0",
+    "@types/node": "^26.1.2",
+    "@types/pg": "^8.20.4",
+    "tsx": "^4.23.11",
+    "typescript": "^7.0.2",
     "vitest": "4.1.10"
   }
 }
