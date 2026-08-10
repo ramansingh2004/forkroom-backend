@@ -17,7 +17,7 @@ dependencies = [
     "pwdlib[argon2]>=0.2,<1",
     "pyjwt>=2.10,<3",
     "python-multipart>=0.0.20,<1",
-    "redis>=5,<8",
+    "redis>=5,<9",
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "uvicorn[standard]>=0.35,<1",
     "celery>=5.5,<6",
@@ -37,8 +37,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28,<1",
-    "mypy>=1.16,<2",
-    "pytest>=8.4,<9",
+    "mypy>=1.16,<3",
+    "pytest>=8.4,<10",
     "pytest-asyncio>=1.0,<2",
     "ruff>=0.12,<1",
 ]
