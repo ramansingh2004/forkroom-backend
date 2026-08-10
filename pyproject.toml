@@ -31,6 +31,7 @@ dependencies = [
     "opentelemetry-instrumentation-sqlalchemy>=0.51b0,<1",
     "opentelemetry-instrumentation-redis>=0.51b0,<1",
     "opentelemetry-instrumentation-celery>=0.51b0,<1",
+    "resend>=2.35.0",
 ]
 
 [dependency-groups]
