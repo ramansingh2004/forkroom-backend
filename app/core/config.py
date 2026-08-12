@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     notification_max_delivery_attempts: int = Field(default=5, gt=0, le=20)
     notification_retry_base_seconds: int = Field(default=30, gt=0, le=3600)
     notification_retry_max_seconds: int = Field(default=3600, gt=0, le=86400)
-    
+
     minio_endpoint: str = "localhost:9000"
     minio_public_endpoint: str = "localhost:9000"
     minio_access_key: str = "forkroom"
