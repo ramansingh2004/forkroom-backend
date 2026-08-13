@@ -625,13 +625,21 @@ GET    /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/destinatio
 GET    /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/subscriptions
 PATCH  /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/subscriptions
 POST   /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/test
+GET    /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/deliveries
 DELETE /api/v1/workspaces/{workspace_id}/integrations/{connection_id}
 ```
 
-The first release supports decision activation, voting opened, voting closed,
-and decision locked subscription configuration. Transactional outbox records,
-delivery attempts, and webhook-event tables are included so asynchronous event
-delivery can be added without changing the public connection contract.
+The integration worker automatically delivers enabled decision activation,
+voting opened, voting closed, and decision locked events. Each domain change and
+its outbox event are committed together. Celery fans the outbox event out to the
+configured Slack channels, uses a stable message id for retry idempotency, and
+records pending, retrying, delivered, or failed delivery state. Celery Beat
+recovers work left pending after broker or worker interruptions every minute.
+
+The worker must consume `integrations.events` in addition to the existing
+queues. Production Compose, local Compose, and Helm worker commands already
+include it. `FRONTEND_URL` controls the **Open in ForkRoom** link included in
+Slack messages.
 
 The expected Alembic head is `e9a2c4f6b8d1`.
 

@@ -1,7 +1,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.core.exceptions import (
     DecisionImmutableError,
@@ -15,6 +15,7 @@ from app.core.exceptions import (
     WorkspaceNotFoundError,
 )
 from app.models.decision import Decision, DecisionLock, DecisionStatus
+from app.models.integration import IntegrationEventType, IntegrationOutboxEvent
 from app.models.objection import Objection
 from app.models.proposal import Proposal, ProposalStatus
 from app.models.user import User
@@ -30,6 +31,7 @@ from app.schemas.decision_lock import (
     DecisionLockVerificationResponse,
 )
 from app.schemas.voting import VotingResultResponse
+from app.services.integration_delivery import IntegrationEventEmitter
 from app.services.voting import VotingService
 
 
@@ -42,6 +44,7 @@ class DecisionLockService:
         objection_repository: ObjectionRepository,
         workspace_repository: WorkspaceRepository,
         voting_service: VotingService,
+        integration_events: IntegrationEventEmitter | None = None,
     ) -> None:
         self._locks = lock_repository
         self._decisions = decision_repository
@@ -49,6 +52,7 @@ class DecisionLockService:
         self._objections = objection_repository
         self._workspaces = workspace_repository
         self._voting = voting_service
+        self._integration_events = integration_events
 
     async def create(
         self,
@@ -96,6 +100,7 @@ class DecisionLockService:
         )
         locked_at = datetime.now(UTC)
         decision_lock = DecisionLock(
+            id=uuid4(),
             decision_id=decision.id,
             voting_session_id=payload.voting_session_id,
             winning_proposal_id=winning_proposal.id,
@@ -105,11 +110,32 @@ class DecisionLockService:
             document_hash=self.hash_snapshot(snapshot),
             locked_at=locked_at,
         )
-        return await self._locks.create(
+        outbox_event: IntegrationOutboxEvent | None = None
+        if self._integration_events is not None:
+            outbox_event = self._integration_events.stage(
+                workspace_id=workspace_id,
+                event_type=IntegrationEventType.DECISION_LOCKED,
+                event_id=decision_lock.id,
+                payload={
+                    "workspace_id": str(workspace_id),
+                    "decision_id": str(decision.id),
+                    "decision_title": decision.title,
+                    "decision_lock_id": str(decision_lock.id),
+                    "winning_proposal_id": str(winning_proposal.id),
+                    "winning_proposal_title": winning_proposal.title,
+                    "actor_id": str(current_user.id),
+                    "actor_name": current_user.display_name,
+                    "locked_at": locked_at.isoformat(),
+                },
+            )
+        created = await self._locks.create(
             decision_lock,
             decision,
             locked_at=locked_at,
         )
+        if outbox_event is not None and self._integration_events is not None:
+            self._integration_events.publish(outbox_event)
+        return created
 
     async def get(
         self,

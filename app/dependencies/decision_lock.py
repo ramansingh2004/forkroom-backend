@@ -4,8 +4,10 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db_session
+from app.dependencies.integration_events import build_integration_event_emitter
 from app.repositories.decision import DecisionRepository
 from app.repositories.decision_lock import DecisionLockRepository
+from app.repositories.integration import IntegrationRepository
 from app.repositories.objection import ObjectionRepository
 from app.repositories.proposal import ProposalRepository
 from app.repositories.voting import VotingRepository
@@ -22,12 +24,14 @@ def get_decision_lock_service(
     proposals = ProposalRepository(session)
     voting = VotingRepository(session)
     workspaces = WorkspaceRepository(session)
+    integration_events = build_integration_event_emitter(IntegrationRepository(session))
     voting_service = VotingService(
         voting,
         objections,
         proposals,
         decisions,
         workspaces,
+        integration_events,
     )
     return DecisionLockService(
         DecisionLockRepository(session),
@@ -36,4 +40,5 @@ def get_decision_lock_service(
         objections,
         workspaces,
         voting_service,
+        integration_events,
     )

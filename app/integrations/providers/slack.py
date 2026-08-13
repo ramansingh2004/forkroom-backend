@@ -8,7 +8,11 @@ from app.core.exceptions import (
     IntegrationProviderError,
     IntegrationProviderUnavailableError,
 )
-from app.integrations.providers.base import ProviderDestination, ProviderInstallation
+from app.integrations.providers.base import (
+    ProviderDestination,
+    ProviderInstallation,
+    ProviderMessage,
+)
 from app.models.integration import IntegrationProvider
 
 
@@ -157,6 +161,27 @@ class SlackProvider:
                 "channel": destination_id,
                 "text": "ForkRoom is connected. Decision notifications will appear here.",
             },
+        )
+
+    async def send_message(
+        self,
+        access_token: str,
+        destination_id: str,
+        message: ProviderMessage,
+    ) -> None:
+        payload: dict[str, object] = {
+            "channel": destination_id,
+            "text": message.text,
+        }
+        if message.blocks:
+            payload["blocks"] = message.blocks
+        if message.idempotency_key:
+            payload["client_msg_id"] = message.idempotency_key
+        await self._api(
+            "POST",
+            "chat.postMessage",
+            access_token,
+            json=payload,
         )
 
     async def revoke(self, access_token: str) -> None:

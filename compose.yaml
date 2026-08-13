@@ -165,7 +165,7 @@ services:
         "app.workers.celery_app:celery_app",
         "worker",
         "--loglevel=INFO",
-        "--queues=notifications.email,scheduler,files.process,exports.generate,search.index",
+        "--queues=notifications.email,scheduler,files.process,exports.generate,search.index,integrations.events",
       ]
     environment: &worker-environment
       DATABASE_URL: postgresql+asyncpg://forkroom:forkroom@postgres:5432/forkroom

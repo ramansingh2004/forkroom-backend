@@ -9,6 +9,7 @@ from app.core.exceptions import (
     WorkspaceNotFoundError,
 )
 from app.models.decision import Decision, DecisionCategory, DecisionStatus
+from app.models.integration import IntegrationEventType, IntegrationOutboxEvent
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.permissions.decision import can_delete_decisions, can_write_decisions
@@ -19,6 +20,7 @@ from app.schemas.decision import (
     DecisionTransitionRequest,
     DecisionUpdateRequest,
 )
+from app.services.integration_delivery import IntegrationEventEmitter
 
 ALLOWED_TRANSITIONS: dict[DecisionStatus, set[DecisionStatus]] = {
     DecisionStatus.DRAFT: {
@@ -48,9 +50,11 @@ class DecisionService:
         self,
         decision_repository: DecisionRepository,
         workspace_repository: WorkspaceRepository,
+        integration_events: IntegrationEventEmitter | None = None,
     ) -> None:
         self._decisions = decision_repository
         self._workspaces = workspace_repository
+        self._integration_events = integration_events
 
     async def create(
         self,
@@ -154,12 +158,34 @@ class DecisionService:
         now = datetime.now(UTC)
         closed_at = now if payload.status is DecisionStatus.CLOSED else None
         archived_at = now if payload.status is DecisionStatus.ARCHIVED else None
-        return await self._decisions.transition(
+        outbox_event: IntegrationOutboxEvent | None = None
+        if (
+            self._integration_events is not None
+            and decision.status is DecisionStatus.DRAFT
+            and payload.status is DecisionStatus.ACTIVE
+        ):
+            outbox_event = self._integration_events.stage(
+                workspace_id=workspace_id,
+                event_type=IntegrationEventType.DECISION_ACTIVATED,
+                event_id=decision.id,
+                payload={
+                    "workspace_id": str(workspace_id),
+                    "decision_id": str(decision.id),
+                    "decision_title": decision.title,
+                    "actor_id": str(current_user.id),
+                    "actor_name": current_user.display_name,
+                    "activated_at": now.isoformat(),
+                },
+            )
+        updated = await self._decisions.transition(
             decision,
             status=payload.status,
             closed_at=closed_at,
             archived_at=archived_at,
         )
+        if outbox_event is not None and self._integration_events is not None:
+            self._integration_events.publish(outbox_event)
+        return updated
 
     async def delete(
         self,

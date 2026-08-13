@@ -10,6 +10,7 @@ notification_exchange = Exchange("notifications", type="direct", durable=True)
 file_exchange = Exchange("files", type="direct", durable=True)
 export_exchange = Exchange("exports", type="direct", durable=True)
 search_exchange = Exchange("search", type="direct", durable=True)
+integration_exchange = Exchange("integrations", type="direct", durable=True)
 dead_letter_exchange = Exchange("dead-letter", type="direct", durable=True)
 
 celery_app = Celery(
@@ -100,6 +101,22 @@ celery_app.conf.update(
             routing_key="search.failed",
             durable=True,
         ),
+        Queue(
+            "integrations.events",
+            exchange=integration_exchange,
+            routing_key="integrations.events",
+            durable=True,
+            queue_arguments={
+                "x-dead-letter-exchange": "dead-letter",
+                "x-dead-letter-routing-key": "integrations.failed",
+            },
+        ),
+        Queue(
+            "integrations.failed",
+            exchange=dead_letter_exchange,
+            routing_key="integrations.failed",
+            durable=True,
+        ),
     ),
     task_routes={
         "forkroom.notifications.deliver": {
@@ -123,6 +140,15 @@ celery_app.conf.update(
             "routing_key": "search.index",
         },
         "forkroom.search.refresh": {"queue": "scheduler"},
+        "forkroom.integrations.dispatch": {
+            "queue": "integrations.events",
+            "routing_key": "integrations.events",
+        },
+        "forkroom.integrations.deliver": {
+            "queue": "integrations.events",
+            "routing_key": "integrations.events",
+        },
+        "forkroom.integrations.recover": {"queue": "scheduler"},
     },
     beat_schedule={
         "discover-due-reminders": {
@@ -143,6 +169,10 @@ celery_app.conf.update(
         },
         "refresh-decision-search-index": {
             "task": "forkroom.search.refresh",
+            "schedule": 60.0,
+        },
+        "recover-integration-events": {
+            "task": "forkroom.integrations.recover",
             "schedule": 60.0,
         },
     },

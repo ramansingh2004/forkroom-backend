@@ -202,7 +202,7 @@ services:
       - app.workers.celery_app:celery_app
       - worker
       - --loglevel=INFO
-      - --queues=notifications.email,scheduler,files.process,exports.generate,search.index
+      - --queues=notifications.email,scheduler,files.process,exports.generate,search.index,integrations.events
     depends_on:
       postgres:
         condition: service_healthy

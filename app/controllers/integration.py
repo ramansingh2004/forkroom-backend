@@ -17,6 +17,8 @@ from app.schemas.integration import (
     IntegrationAuthorizeRequest,
     IntegrationConnectionListResponse,
     IntegrationConnectionResponse,
+    IntegrationDeliveryListResponse,
+    IntegrationDeliveryResponse,
     IntegrationDestinationListResponse,
     IntegrationDestinationResponse,
     IntegrationProviderListResponse,
@@ -205,6 +207,31 @@ async def test_integration(
         _raise_integration_error(error)
         raise
     return IntegrationTestResponse(delivered=True)
+
+
+async def list_integration_deliveries(
+    workspace_id: UUID,
+    connection_id: UUID,
+    current_user: User,
+    service: IntegrationService,
+    *,
+    limit: int,
+    offset: int,
+) -> IntegrationDeliveryListResponse:
+    try:
+        deliveries = await service.list_deliveries(
+            current_user,
+            workspace_id,
+            connection_id,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as error:
+        _raise_integration_error(error)
+        raise
+    return IntegrationDeliveryListResponse(
+        items=[IntegrationDeliveryResponse.model_validate(item) for item in deliveries]
+    )
 
 
 async def disconnect_integration(

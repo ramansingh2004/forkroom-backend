@@ -21,6 +21,7 @@ from app.integrations.token_encryption import IntegrationTokenCipher
 from app.models.integration import (
     IntegrationConnection,
     IntegrationConnectionStatus,
+    IntegrationDelivery,
     IntegrationEventType,
     IntegrationProvider,
     IntegrationSubscription,
@@ -248,6 +249,23 @@ class IntegrationService:
         await provider.verify_connection(token)
         await provider.send_test_message(token, selected_destination)
         await self._integrations.mark_verified(connection, datetime.now(UTC))
+
+    async def list_deliveries(
+        self,
+        current_user: User,
+        workspace_id: UUID,
+        connection_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[IntegrationDelivery]:
+        await self._require_membership(current_user.id, workspace_id)
+        connection = await self._require_connection(workspace_id, connection_id)
+        return await self._integrations.list_deliveries(
+            connection.id,
+            limit=limit,
+            offset=offset,
+        )
 
     async def disconnect(
         self,

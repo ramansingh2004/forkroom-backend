@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.integration import (
     IntegrationConnectionStatus,
+    IntegrationDeliveryStatus,
     IntegrationEventType,
     IntegrationProvider,
 )
@@ -132,3 +133,23 @@ class IntegrationTestRequest(BaseModel):
 
 class IntegrationTestResponse(BaseModel):
     delivered: bool
+
+
+class IntegrationDeliveryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    connection_id: UUID
+    event_type: IntegrationEventType
+    event_id: UUID
+    status: IntegrationDeliveryStatus
+    attempt_count: int
+    error_code: str | None
+    next_retry_at: datetime | None
+    delivered_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class IntegrationDeliveryListResponse(BaseModel):
+    items: list[IntegrationDeliveryResponse]

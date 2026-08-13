@@ -126,7 +126,7 @@ spec:
         - name: worker
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
-          command: ["celery", "-A", "app.workers.celery_app:celery_app", "worker", "--loglevel=INFO", "--queues=notifications.email,scheduler,files.process,exports.generate,search.index"]
+          command: ["celery", "-A", "app.workers.celery_app:celery_app", "worker", "--loglevel=INFO", "--queues=notifications.email,scheduler,files.process,exports.generate,search.index,integrations.events"]
           envFrom:
             - configMapRef: {name: {{ include "forkroom.fullname" . }}-config}
             - secretRef: {name: {{ include "forkroom.secretName" . }}}

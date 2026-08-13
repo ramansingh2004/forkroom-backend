@@ -2,6 +2,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
+from app.integrations.providers.base import ProviderMessage
 from app.integrations.providers.slack import SlackProvider
 
 
@@ -90,3 +91,23 @@ async def test_slack_authorization_url_binds_state_and_pkce() -> None:
     assert query["state"] == ["oauth-state"]
     assert query["code_challenge"] == ["pkce-challenge"]
     assert query["code_challenge_method"] == ["S256"]
+
+
+async def test_slack_posts_notification_with_idempotency_key() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/chat.postMessage"
+        assert request.headers["Authorization"] == "Bearer xoxb-token"
+        payload = request.read().decode("utf-8")
+        assert '"channel":"C123"' in payload
+        assert '"client_msg_id":"delivery-id"' in payload
+        return httpx.Response(200, json={"ok": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await make_provider(client).send_message(
+            "xoxb-token",
+            "C123",
+            ProviderMessage(
+                text="Decision activated",
+                idempotency_key="delivery-id",
+            ),
+        )

@@ -16,6 +16,7 @@ from app.core.exceptions import (
     WorkspaceNotFoundError,
 )
 from app.models.decision import Decision, DecisionStatus
+from app.models.integration import IntegrationEventType, IntegrationOutboxEvent
 from app.models.proposal import ProposalStatus
 from app.models.user import User
 from app.models.voting import Vote, VotingSession, VotingSessionStatus
@@ -32,6 +33,7 @@ from app.schemas.voting import (
     VotingResultResponse,
     VotingSessionCreateRequest,
 )
+from app.services.integration_delivery import IntegrationEventEmitter
 
 
 class VotingService:
@@ -42,12 +44,14 @@ class VotingService:
         proposal_repository: ProposalRepository,
         decision_repository: DecisionRepository,
         workspace_repository: WorkspaceRepository,
+        integration_events: IntegrationEventEmitter | None = None,
     ) -> None:
         self._voting = voting_repository
         self._objections = objection_repository
         self._proposals = proposal_repository
         self._decisions = decision_repository
         self._workspaces = workspace_repository
+        self._integration_events = integration_events
 
     async def create_session(
         self,
@@ -130,12 +134,37 @@ class VotingService:
         if not eligible_user_ids:
             raise VotingConflictError
 
-        return await self._voting.open(
+        outbox_event: IntegrationOutboxEvent | None = None
+        if self._integration_events is not None:
+            outbox_event = self._integration_events.stage(
+                workspace_id=workspace_id,
+                event_type=IntegrationEventType.VOTING_OPENED,
+                event_id=voting_session.id,
+                payload={
+                    "workspace_id": str(workspace_id),
+                    "decision_id": str(decision.id),
+                    "decision_title": decision.title,
+                    "voting_session_id": str(voting_session.id),
+                    "actor_id": str(current_user.id),
+                    "actor_name": current_user.display_name,
+                    "eligible_voter_count": len(eligible_user_ids),
+                    "opened_at": now.isoformat(),
+                    "closes_at": (
+                        voting_session.closes_at.isoformat()
+                        if voting_session.closes_at is not None
+                        else None
+                    ),
+                },
+            )
+        opened = await self._voting.open(
             voting_session,
             eligible_user_ids=eligible_user_ids,
             proposal_ids=[proposal.id for proposal in proposals],
             opened_at=now,
         )
+        if outbox_event is not None and self._integration_events is not None:
+            self._integration_events.publish(outbox_event)
+        return opened
 
     async def cast_vote(
         self,
@@ -173,7 +202,7 @@ class VotingService:
         decision_id: UUID,
         voting_session_id: UUID,
     ) -> VotingSession:
-        membership, _ = await self._context(
+        membership, decision = await self._context(
             current_user.id,
             workspace_id,
             decision_id,
@@ -183,10 +212,30 @@ class VotingService:
         voting_session = await self._require_session(decision_id, voting_session_id)
         if voting_session.status is not VotingSessionStatus.OPEN:
             raise VotingInvalidTransitionError
-        return await self._voting.close(
+        closed_at = datetime.now(UTC)
+        outbox_event: IntegrationOutboxEvent | None = None
+        if self._integration_events is not None:
+            outbox_event = self._integration_events.stage(
+                workspace_id=workspace_id,
+                event_type=IntegrationEventType.VOTING_CLOSED,
+                event_id=voting_session.id,
+                payload={
+                    "workspace_id": str(workspace_id),
+                    "decision_id": str(decision.id),
+                    "decision_title": decision.title,
+                    "voting_session_id": str(voting_session.id),
+                    "actor_id": str(current_user.id),
+                    "actor_name": current_user.display_name,
+                    "closed_at": closed_at.isoformat(),
+                },
+            )
+        closed = await self._voting.close(
             voting_session,
-            closed_at=datetime.now(UTC),
+            closed_at=closed_at,
         )
+        if outbox_event is not None and self._integration_events is not None:
+            self._integration_events.publish(outbox_event)
+        return closed
 
     async def cancel_session(
         self,

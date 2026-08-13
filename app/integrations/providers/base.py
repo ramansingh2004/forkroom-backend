@@ -23,6 +23,13 @@ class ProviderDestination:
     type: str
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderMessage:
+    text: str
+    blocks: list[dict[str, object]] | None = None
+    idempotency_key: str | None = None
+
+
 class IntegrationProviderClient(Protocol):
     provider: IntegrationProvider
     name: str
@@ -49,6 +56,13 @@ class IntegrationProviderClient(Protocol):
         self,
         access_token: str,
         destination_id: str,
+    ) -> None: ...
+
+    async def send_message(
+        self,
+        access_token: str,
+        destination_id: str,
+        message: ProviderMessage,
     ) -> None: ...
 
     async def revoke(self, access_token: str) -> None: ...

@@ -3,14 +3,18 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.providers.base import ProviderInstallation
 from app.models.integration import (
     IntegrationConnection,
     IntegrationConnectionStatus,
+    IntegrationDelivery,
+    IntegrationDeliveryStatus,
     IntegrationEventType,
+    IntegrationOutboxEvent,
+    IntegrationOutboxStatus,
     IntegrationProvider,
     IntegrationSubscription,
 )
@@ -155,3 +159,322 @@ class IntegrationRepository:
         connection.refresh_token_encrypted = None
         connection.token_expires_at = None
         await self._session.commit()
+
+    def stage_outbox_event(
+        self,
+        *,
+        workspace_id: UUID,
+        event_type: IntegrationEventType,
+        event_id: UUID,
+        payload: dict[str, object],
+        available_at: datetime,
+    ) -> IntegrationOutboxEvent:
+        event = IntegrationOutboxEvent(
+            workspace_id=workspace_id,
+            event_type=event_type,
+            event_id=event_id,
+            payload=payload,
+            available_at=available_at,
+        )
+        self._session.add(event)
+        return event
+
+    async def claim_outbox_event(
+        self,
+        event_id: UUID,
+        now: datetime,
+        *,
+        max_attempts: int,
+    ) -> IntegrationOutboxEvent | None:
+        statement = (
+            select(IntegrationOutboxEvent)
+            .where(
+                IntegrationOutboxEvent.id == event_id,
+                IntegrationOutboxEvent.status.in_(
+                    {IntegrationOutboxStatus.PENDING, IntegrationOutboxStatus.FAILED}
+                ),
+                IntegrationOutboxEvent.available_at <= now,
+                IntegrationOutboxEvent.attempt_count < max_attempts,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        event = cast(
+            IntegrationOutboxEvent | None,
+            await self._session.scalar(statement),
+        )
+        if event is None:
+            return None
+        event.status = IntegrationOutboxStatus.PROCESSING
+        event.attempt_count += 1
+        event.last_error = None
+        await self._session.commit()
+        await self._session.refresh(event)
+        return event
+
+    async def get_outbox_event(
+        self,
+        event_id: UUID,
+    ) -> IntegrationOutboxEvent | None:
+        return cast(
+            IntegrationOutboxEvent | None,
+            await self._session.get(IntegrationOutboxEvent, event_id),
+        )
+
+    async def create_deliveries(
+        self,
+        event: IntegrationOutboxEvent,
+        now: datetime,
+    ) -> list[IntegrationDelivery]:
+        statement = (
+            select(IntegrationConnection, IntegrationSubscription)
+            .join(
+                IntegrationSubscription,
+                IntegrationSubscription.connection_id == IntegrationConnection.id,
+            )
+            .where(
+                IntegrationConnection.workspace_id == event.workspace_id,
+                IntegrationConnection.status == IntegrationConnectionStatus.ACTIVE,
+                IntegrationSubscription.event_type == event.event_type,
+                IntegrationSubscription.enabled.is_(True),
+                IntegrationSubscription.destination_id.is_not(None),
+            )
+        )
+        rows = (await self._session.execute(statement)).all()
+        existing_statement = select(IntegrationDelivery.connection_id).where(
+            IntegrationDelivery.event_type == event.event_type,
+            IntegrationDelivery.event_id == event.event_id,
+        )
+        existing_connection_ids = set((await self._session.scalars(existing_statement)).all())
+        deliveries: list[IntegrationDelivery] = []
+        for connection, subscription in rows:
+            if connection.id in existing_connection_ids or subscription.destination_id is None:
+                continue
+            delivery = IntegrationDelivery(
+                connection_id=connection.id,
+                event_type=event.event_type,
+                event_id=event.event_id,
+                request_summary={
+                    "workspace_id": str(event.workspace_id),
+                    "destination_id": subscription.destination_id,
+                    "destination_name": subscription.destination_name,
+                    "payload": event.payload,
+                },
+                next_retry_at=now,
+            )
+            self._session.add(delivery)
+            deliveries.append(delivery)
+        event.status = IntegrationOutboxStatus.PROCESSED
+        event.processed_at = now
+        event.last_error = None
+        await self._session.commit()
+        for delivery in deliveries:
+            await self._session.refresh(delivery)
+        return deliveries
+
+    async def mark_outbox_failed(
+        self,
+        event_id: UUID,
+        *,
+        available_at: datetime,
+        error: str,
+    ) -> None:
+        event = await self._session.get(IntegrationOutboxEvent, event_id)
+        if event is None or event.status is IntegrationOutboxStatus.PROCESSED:
+            return
+        event.status = IntegrationOutboxStatus.FAILED
+        event.available_at = available_at
+        event.last_error = error[:2000]
+        await self._session.commit()
+
+    async def list_ready_outbox_events(
+        self,
+        now: datetime,
+        *,
+        max_attempts: int,
+        limit: int = 100,
+    ) -> list[IntegrationOutboxEvent]:
+        statement = (
+            select(IntegrationOutboxEvent)
+            .where(
+                IntegrationOutboxEvent.status.in_(
+                    {IntegrationOutboxStatus.PENDING, IntegrationOutboxStatus.FAILED}
+                ),
+                IntegrationOutboxEvent.available_at <= now,
+                IntegrationOutboxEvent.attempt_count < max_attempts,
+            )
+            .order_by(IntegrationOutboxEvent.available_at.asc())
+            .limit(limit)
+        )
+        return list((await self._session.scalars(statement)).all())
+
+    async def claim_delivery(
+        self,
+        delivery_id: UUID,
+        now: datetime,
+    ) -> IntegrationDelivery | None:
+        statement = (
+            select(IntegrationDelivery)
+            .where(
+                IntegrationDelivery.id == delivery_id,
+                IntegrationDelivery.status.in_(
+                    {
+                        IntegrationDeliveryStatus.PENDING,
+                        IntegrationDeliveryStatus.RETRY_SCHEDULED,
+                    }
+                ),
+                or_(
+                    IntegrationDelivery.next_retry_at.is_(None),
+                    IntegrationDelivery.next_retry_at <= now,
+                ),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        delivery = cast(
+            IntegrationDelivery | None,
+            await self._session.scalar(statement),
+        )
+        if delivery is None:
+            return None
+        delivery.status = IntegrationDeliveryStatus.DELIVERING
+        delivery.attempt_count += 1
+        delivery.error_code = None
+        delivery.next_retry_at = None
+        await self._session.commit()
+        await self._session.refresh(delivery)
+        return delivery
+
+    async def get_delivery(
+        self,
+        delivery_id: UUID,
+    ) -> IntegrationDelivery | None:
+        return cast(
+            IntegrationDelivery | None,
+            await self._session.get(IntegrationDelivery, delivery_id),
+        )
+
+    async def get_connection_by_id(
+        self,
+        connection_id: UUID,
+    ) -> IntegrationConnection | None:
+        return cast(
+            IntegrationConnection | None,
+            await self._session.get(IntegrationConnection, connection_id),
+        )
+
+    async def mark_delivery_delivered(
+        self,
+        delivery_id: UUID,
+        now: datetime,
+    ) -> None:
+        delivery = await self._session.get(IntegrationDelivery, delivery_id)
+        if delivery is None:
+            return
+        delivery.status = IntegrationDeliveryStatus.DELIVERED
+        delivery.delivered_at = now
+        delivery.next_retry_at = None
+        delivery.error_code = None
+        await self._session.commit()
+
+    async def schedule_delivery_retry(
+        self,
+        delivery_id: UUID,
+        *,
+        next_retry_at: datetime,
+        error_code: str,
+    ) -> None:
+        delivery = await self._session.get(IntegrationDelivery, delivery_id)
+        if delivery is None or delivery.status is IntegrationDeliveryStatus.DELIVERED:
+            return
+        delivery.status = IntegrationDeliveryStatus.RETRY_SCHEDULED
+        delivery.next_retry_at = next_retry_at
+        delivery.error_code = error_code[:100]
+        await self._session.commit()
+
+    async def mark_delivery_failed(
+        self,
+        delivery_id: UUID,
+        error_code: str,
+    ) -> None:
+        delivery = await self._session.get(IntegrationDelivery, delivery_id)
+        if delivery is None or delivery.status is IntegrationDeliveryStatus.DELIVERED:
+            return
+        delivery.status = IntegrationDeliveryStatus.FAILED
+        delivery.next_retry_at = None
+        delivery.error_code = error_code[:100]
+        await self._session.commit()
+
+    async def list_ready_deliveries(
+        self,
+        now: datetime,
+        *,
+        max_attempts: int,
+        limit: int = 100,
+    ) -> list[IntegrationDelivery]:
+        statement = (
+            select(IntegrationDelivery)
+            .where(
+                IntegrationDelivery.status.in_(
+                    {
+                        IntegrationDeliveryStatus.PENDING,
+                        IntegrationDeliveryStatus.RETRY_SCHEDULED,
+                    }
+                ),
+                IntegrationDelivery.attempt_count < max_attempts,
+                or_(
+                    IntegrationDelivery.next_retry_at.is_(None),
+                    IntegrationDelivery.next_retry_at <= now,
+                ),
+            )
+            .order_by(IntegrationDelivery.created_at.asc())
+            .limit(limit)
+        )
+        return list((await self._session.scalars(statement)).all())
+
+    async def recover_stale_claims(
+        self,
+        *,
+        stale_before: datetime,
+        available_at: datetime,
+        max_attempts: int,
+    ) -> tuple[int, int]:
+        outbox_statement = select(IntegrationOutboxEvent).where(
+            IntegrationOutboxEvent.status == IntegrationOutboxStatus.PROCESSING,
+            IntegrationOutboxEvent.updated_at <= stale_before,
+        )
+        delivery_statement = select(IntegrationDelivery).where(
+            IntegrationDelivery.status == IntegrationDeliveryStatus.DELIVERING,
+            IntegrationDelivery.updated_at <= stale_before,
+        )
+        outbox_events = list((await self._session.scalars(outbox_statement)).all())
+        deliveries = list((await self._session.scalars(delivery_statement)).all())
+        for event in outbox_events:
+            event.status = IntegrationOutboxStatus.FAILED
+            event.available_at = available_at
+            event.last_error = "stale_claim_recovered"
+        for delivery in deliveries:
+            if delivery.attempt_count >= max_attempts:
+                delivery.status = IntegrationDeliveryStatus.FAILED
+                delivery.next_retry_at = None
+            else:
+                delivery.status = IntegrationDeliveryStatus.RETRY_SCHEDULED
+                delivery.next_retry_at = available_at
+            delivery.error_code = "stale_claim_recovered"
+        if outbox_events or deliveries:
+            await self._session.commit()
+        return len(outbox_events), len(deliveries)
+
+    async def list_deliveries(
+        self,
+        connection_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[IntegrationDelivery]:
+        statement = (
+            select(IntegrationDelivery)
+            .where(IntegrationDelivery.connection_id == connection_id)
+            .order_by(IntegrationDelivery.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self._session.scalars(statement)).all())

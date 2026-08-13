@@ -8,6 +8,7 @@ from app.controllers.integration import (
     authorize_integration,
     disconnect_integration,
     get_workspace_integration,
+    list_integration_deliveries,
     list_integration_destinations,
     list_integration_providers,
     list_integration_subscriptions,
@@ -26,6 +27,7 @@ from app.schemas.integration import (
     IntegrationAuthorizeRequest,
     IntegrationConnectionListResponse,
     IntegrationConnectionResponse,
+    IntegrationDeliveryListResponse,
     IntegrationDestinationListResponse,
     IntegrationProviderListResponse,
     IntegrationSubscriptionListResponse,
@@ -211,6 +213,29 @@ async def test_connection(
         payload,
         current_user,
         service,
+    )
+
+
+@router.get(
+    "/workspaces/{workspace_id}/integrations/{connection_id}/deliveries",
+    response_model=IntegrationDeliveryListResponse,
+    summary="List integration delivery history",
+)
+async def deliveries(
+    workspace_id: UUID,
+    connection_id: UUID,
+    current_user: CurrentUser,
+    service: Service,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> IntegrationDeliveryListResponse:
+    return await list_integration_deliveries(
+        workspace_id,
+        connection_id,
+        current_user,
+        service,
+        limit=limit,
+        offset=offset,
     )
 
 

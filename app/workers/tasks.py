@@ -4,21 +4,26 @@ from uuid import UUID
 
 from celery import Task
 from celery.exceptions import Reject
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import AttachmentValidationError
+from app.dependencies.integration_events import CeleryIntegrationTaskPublisher
 from app.integrations.email import EmailService
 from app.integrations.object_storage import ObjectStorage
 from app.integrations.pdf_export import DecisionPdfRenderer
+from app.integrations.provider_registry import IntegrationProviderRegistry
 from app.models.attachment import AttachmentStatus
 from app.models.export_search import ExportStatus
 from app.models.notification import Notification
 from app.repositories.attachment import AttachmentRepository
 from app.repositories.decision_lock import DecisionLockRepository
 from app.repositories.export_search import DecisionExportRepository, SearchRepository
+from app.repositories.integration import IntegrationRepository
 from app.repositories.notification import NotificationRepository
 from app.services.attachment import AttachmentProcessingService
 from app.services.export_search import DecisionExportProcessingService, SearchIndexService
+from app.services.integration_delivery import IntegrationDeliveryService
 from app.services.notification import NotificationPublisher, ReminderDiscoveryService
 from app.workers.celery_app import celery_app
 from app.workers.database import WorkerSessionFactory
@@ -325,3 +330,98 @@ def deliver_notification(self: Task, notification_id: str) -> str:
             ) from error
         raise Reject(str(error), requeue=False) from error
     return "delivered"
+
+
+def _integration_service(session: AsyncSession) -> IntegrationDeliveryService:
+    return IntegrationDeliveryService(
+        IntegrationRepository(session),
+        IntegrationProviderRegistry(settings),
+        CeleryIntegrationTaskPublisher(),
+        settings,
+    )
+
+
+async def _dispatch_integration_event(event_id: UUID) -> int:
+    async with WorkerSessionFactory() as session:
+        return await _integration_service(session).dispatch_outbox(event_id)
+
+
+async def _record_integration_outbox_error(event_id: UUID, error: Exception) -> int:
+    async with WorkerSessionFactory() as session:
+        return await _integration_service(session).record_outbox_error(event_id, error)
+
+
+async def _deliver_integration_event(delivery_id: UUID) -> str:
+    async with WorkerSessionFactory() as session:
+        return await _integration_service(session).deliver(delivery_id)
+
+
+async def _record_integration_delivery_error(
+    delivery_id: UUID,
+    error: Exception,
+) -> int:
+    async with WorkerSessionFactory() as session:
+        return await _integration_service(session).record_delivery_error(delivery_id, error)
+
+
+async def _recover_integration_events() -> int:
+    async with WorkerSessionFactory() as session:
+        outbox_count, delivery_count = await _integration_service(session).recover()
+        return outbox_count + delivery_count
+
+
+@celery_app.task(name="forkroom.integrations.recover")  # type: ignore[untyped-decorator]
+def recover_integration_events() -> int:
+    return asyncio.run(_recover_integration_events())
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="forkroom.integrations.dispatch",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)  # type: ignore[untyped-decorator]
+def dispatch_integration_event(self: Task, event_id: str) -> int:
+    parsed_id = UUID(event_id)
+    try:
+        return asyncio.run(_dispatch_integration_event(parsed_id))
+    except Exception as error:
+        attempts = asyncio.run(_record_integration_outbox_error(parsed_id, error))
+        if attempts >= settings.integration_max_retries:
+            raise Reject(str(error), requeue=False) from error
+        countdown = min(
+            settings.notification_retry_base_seconds * (2 ** max(attempts - 1, 0)),
+            settings.notification_retry_max_seconds,
+        )
+        raise self.retry(
+            exc=error,
+            countdown=countdown,
+            max_retries=settings.integration_max_retries - 1,
+        ) from error
+
+
+@celery_app.task(
+    bind=True,
+    base=Task,
+    name="forkroom.integrations.deliver",
+    acks_late=True,
+    reject_on_worker_lost=True,
+)  # type: ignore[untyped-decorator]
+def deliver_integration_event(self: Task, delivery_id: str) -> str:
+    parsed_id = UUID(delivery_id)
+    try:
+        return asyncio.run(_deliver_integration_event(parsed_id))
+    except Exception as error:
+        attempts = asyncio.run(_record_integration_delivery_error(parsed_id, error))
+        if attempts >= settings.integration_max_retries:
+            raise Reject(str(error), requeue=False) from error
+        countdown = min(
+            settings.notification_retry_base_seconds * (2 ** max(attempts - 1, 0)),
+            settings.notification_retry_max_seconds,
+        )
+        raise self.retry(
+            exc=error,
+            countdown=countdown,
+            max_retries=settings.integration_max_retries - 1,
+        ) from error
