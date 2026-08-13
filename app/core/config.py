@@ -81,6 +81,15 @@ class Settings(BaseSettings):
     turn_credential_ttl_seconds: int = Field(default=3600, ge=300, le=86400)
 
     frontend_url: str = "http://localhost:3000"
+    slack_client_id: str | None = None
+    slack_client_secret: str | None = None
+    slack_signing_secret: str | None = None
+    slack_redirect_uri: str | None = None
+    slack_bot_scopes: str = "chat:write,channels:read,groups:read"
+    integration_token_encryption_key: str | None = None
+    integration_oauth_state_ttl_seconds: int = Field(default=600, ge=300, le=1800)
+    integration_http_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    integration_max_retries: int = Field(default=6, ge=1, le=12)
     mail_from_address: str = "noreply@forkroom.local"
     mail_from_name: str = "ForkRoom"
     smtp_host: str = "localhost"

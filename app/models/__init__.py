@@ -18,6 +18,13 @@ def import_all_models() -> None:
         DecisionExport,
         DecisionSearchDocument,
     )
+    from app.models.integration import (  # noqa: F401
+        IntegrationConnection,
+        IntegrationDelivery,
+        IntegrationOutboxEvent,
+        IntegrationSubscription,
+        IntegrationWebhookEvent,
+    )
     from app.models.notification import Notification  # noqa: F401
     from app.models.objection import Objection, ObjectionStatusEvent  # noqa: F401
     from app.models.proposal import (  # noqa: F401

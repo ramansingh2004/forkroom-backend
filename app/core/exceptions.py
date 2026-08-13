@@ -256,3 +256,27 @@ class MeetingRoomFullError(Exception):
 
 class MeetingEventInvalidError(ValueError):
     """Raised when a meeting event violates room workflow rules."""
+
+
+class IntegrationNotFoundError(Exception):
+    """Raised when an integration connection is not visible in a workspace."""
+
+
+class IntegrationAccessDeniedError(Exception):
+    """Raised when a workspace role cannot manage integrations."""
+
+
+class IntegrationProviderUnavailableError(Exception):
+    """Raised when a provider is disabled or missing required configuration."""
+
+
+class IntegrationOAuthStateError(Exception):
+    """Raised when an integration OAuth state is missing, expired, or reused."""
+
+
+class IntegrationProviderError(Exception):
+    """Raised when an external integration provider rejects a request."""
+
+
+class IntegrationConfigurationError(Exception):
+    """Raised when an integration connection is missing required configuration."""

@@ -608,7 +608,32 @@ Results are workspace-scoped, permission-checked, ranked, paginated, and include
 `<mark>` highlights produced by `ts_headline`. RabbitMQ queues are
 `search.index` and `search.failed`; PostgreSQL remains the source of truth.
 
-The expected Alembic head is `d6f8a1c4e7b9`.
+## Slack integration foundation
+
+Workspace owners and admins can install Slack through OAuth V2 with PKCE and a
+single-use Redis state. ForkRoom encrypts provider credentials before storing
+them in PostgreSQL. Members can view connection status, while only owners and
+admins can discover channels, configure subscriptions, send a test message, or
+disconnect the installation.
+
+```text
+GET    /api/v1/integrations/providers
+GET    /api/v1/workspaces/{workspace_id}/integrations
+POST   /api/v1/workspaces/{workspace_id}/integrations/slack/authorize
+GET    /api/v1/integrations/slack/callback
+GET    /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/destinations
+GET    /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/subscriptions
+PATCH  /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/subscriptions
+POST   /api/v1/workspaces/{workspace_id}/integrations/{connection_id}/test
+DELETE /api/v1/workspaces/{workspace_id}/integrations/{connection_id}
+```
+
+The first release supports decision activation, voting opened, voting closed,
+and decision locked subscription configuration. Transactional outbox records,
+delivery attempts, and webhook-event tables are included so asynchronous event
+delivery can be added without changing the public connection contract.
+
+The expected Alembic head is `e9a2c4f6b8d1`.
 
 ## Delivery, Kubernetes, observability, and resilience
 
