@@ -206,6 +206,30 @@ class NotificationNotFoundError(Exception):
     """Raised when a notification is not owned by the requesting user."""
 
 
+class CommentNotFoundError(Exception):
+    """Raised when a comment is absent, deleted, or outside the workspace."""
+
+
+class CommentAccessDeniedError(Exception):
+    """Raised when a user cannot edit or delete a comment."""
+
+
+class CommentContextInvalidError(Exception):
+    """Raised when a proposal or objection is outside the comment decision."""
+
+
+class MentionMemberInvalidError(Exception):
+    """Raised when a mentioned user is not an active workspace member."""
+
+
+class MentionNotFoundError(Exception):
+    """Raised when a mention is not owned by the requesting user."""
+
+
+class MentionCursorInvalidError(ValueError):
+    """Raised when a mention pagination cursor cannot be decoded."""
+
+
 class AttachmentNotFoundError(Exception):
     """Raised when an attachment is not visible in the requested workspace."""
 

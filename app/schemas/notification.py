@@ -13,6 +13,10 @@ class NotificationResponse(BaseModel):
     workspace_id: UUID
     kind: NotificationKind
     source_id: UUID
+    actor_id: UUID | None
+    entity_type: str | None
+    entity_id: UUID | None
+    action_url: str | None
     title: str
     body: str
     status: NotificationStatus
