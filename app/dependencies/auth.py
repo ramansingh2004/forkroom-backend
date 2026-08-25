@@ -61,6 +61,7 @@ async def enforce_auth_rate_limit(
     limits = {
         "register": (settings.register_rate_limit_requests),
         "login": (settings.login_rate_limit_requests),
+        "authorize": (settings.login_rate_limit_requests),
         "refresh": (settings.refresh_rate_limit_requests),
         "logout": (settings.logout_rate_limit_requests),
         "request": (settings.verification_rate_limit_requests),
