@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 
 from app.controllers.auth import (
     forgot_password,
@@ -12,12 +13,18 @@ from app.controllers.auth import (
     reset_password,
     verify_email,
 )
+from app.controllers.google_oauth import (
+    begin_google_oauth,
+    cancel_google_oauth,
+    complete_google_oauth,
+)
 from app.core.config import get_settings
 from app.dependencies.auth import (
     enforce_auth_rate_limit,
     get_auth_service,
     get_current_user,
 )
+from app.dependencies.google_oauth import get_google_oauth_service
 from app.models.user import User
 from app.schemas.auth import (
     ActionTokenRequest,
@@ -33,6 +40,7 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.auth import AuthService
+from app.services.google_oauth import GoogleOAuthService
 
 ACCESS_COOKIE = "forkroom_access"
 REFRESH_COOKIE = "forkroom_refresh"
@@ -130,6 +138,58 @@ async def login(
         result.tokens.refresh_token,
     )
     return LoginResponse(user=UserResponse.model_validate(result.user))
+
+
+@router.get(
+    "/google/authorize",
+    response_class=RedirectResponse,
+    summary="Start Google sign-in",
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
+async def google_authorize(
+    service: Annotated[
+        GoogleOAuthService,
+        Depends(get_google_oauth_service),
+    ],
+    return_path: str = "/",
+) -> RedirectResponse:
+    authorization_url = await begin_google_oauth(return_path, service)
+    return RedirectResponse(authorization_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+
+@router.get(
+    "/google/callback",
+    response_class=RedirectResponse,
+    summary="Complete Google sign-in",
+)
+async def google_callback(
+    state: str,
+    service: Annotated[
+        GoogleOAuthService,
+        Depends(get_google_oauth_service),
+    ],
+    code: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    if error is not None:
+        redirect_url = await cancel_google_oauth(state, error, service)
+        return RedirectResponse(redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+    if not code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google authorization code is missing",
+        )
+    completion = await complete_google_oauth(code, state, service)
+    response = RedirectResponse(
+        completion.redirect_url,
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    _set_auth_cookies(
+        response,
+        completion.tokens.access_token,
+        completion.tokens.refresh_token,
+    )
+    return response
 
 
 @router.post(

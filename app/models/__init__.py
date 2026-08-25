@@ -28,6 +28,7 @@ def import_all_models() -> None:
     )
     from app.models.mention import Mention  # noqa: F401
     from app.models.notification import Notification  # noqa: F401
+    from app.models.oauth_account import OAuthAccount  # noqa: F401
     from app.models.objection import Objection, ObjectionStatusEvent  # noqa: F401
     from app.models.proposal import (  # noqa: F401
         DecisionCriterion,

@@ -22,6 +22,26 @@ class InvalidActionTokenError(Exception):
     """Raised when an email verification or password reset token is invalid."""
 
 
+class GoogleOAuthNotConfiguredError(Exception):
+    """Raised when required Google OAuth credentials are absent."""
+
+
+class GoogleOAuthStateInvalidError(Exception):
+    """Raised when Google OAuth state is invalid, expired, or already consumed."""
+
+
+class GoogleOAuthProviderError(Exception):
+    """Raised when Google token or profile endpoints cannot complete a request."""
+
+
+class GoogleOAuthProfileInvalidError(Exception):
+    """Raised when Google does not return a verified usable identity."""
+
+
+class GoogleOAuthAccountConflictError(Exception):
+    """Raised when a Google identity conflicts with an existing link."""
+
+
 class WorkspaceNotFoundError(Exception):
     """Raised when a workspace does not exist or is not visible to the user."""
 
